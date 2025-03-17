@@ -1,27 +1,49 @@
-# MyAngularApp
+# Belka Card Game
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 15.2.11.
+Телеграм-бот для игры в карточную игру "Белка" для 4 игроков.
 
-## Development server
+## Описание
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+Белка - популярная карточная игра, в которую играют командами по 2 человека. Цель игры - набрать 12 "глаз" (очков) или выиграть "голую" (все взятки в раунде).
 
-## Code scaffolding
+## Особенности
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+- Полная реализация правил игры Белка
+- Интерактивный интерфейс с кнопками для хода
+- Поддержка групповых чатов в Telegram
+- Система команд и подсчета очков
+- Специальные правила для валетов и козырей
 
-## Build
+## Команды бота
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+- `/start` - Начать взаимодействие с ботом
+- `/help` - Показать справку по командам и правилам
+- `/join` - Присоединиться к игре
+- `/startbelka` - Начать игру (когда набралось 4 игрока)
+- `/cards` - Показать свои карты
+- `/state` - Показать текущее состояние игры
+- `/endgame` - Проголосовать за завершение игры
+- `/clearbot` - Сбросить текущую игру (в случае проблем)
 
-## Running unit tests
+## Правила игры
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+- Цель: набрать 12 глаз или выиграть "голую"
+- Старшинство карт: 7, 8, 9, Дама, Король, 10, Туз, Валет
+- Валеты всегда козыри: крести > пики > черви > буби
+- Очки: Туз - 11, 10 - 10, Король - 4, Дама - 3, Валет - 2
+- Если ход начинается с козыря или валета, нужно ходить козырем (включая валетов)
+- Если ход начинается с обычной масти, нужно ходить в эту масть (валеты нельзя использовать)
+- Если нужной масти нет, можно ходить любой картой (включая валетов)
 
-## Running end-to-end tests
+## Установка и запуск
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+1. Клонировать репозиторий
+2. Установить зависимости: `npm install`
+3. Создать файл `.env` с токеном бота: `BOT_TOKEN=your_token_here`
+4. Запустить бота: `npm start`
 
-## Further help
+## Технологии
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+- TypeScript
+- Node.js
+- Telegraf (библиотека для Telegram Bot API)
