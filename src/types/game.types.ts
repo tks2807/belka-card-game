@@ -50,7 +50,7 @@ export interface GameState {
     };
     clubJackHolder: Player | null;
     initialClubJackHolder: Player | null;
-    playerSuitMap: Record<number, CardSuit>;
+    playerSuitMap: Map<number, CardSuit>;
     hideClubJackHolder: boolean;
 }
 

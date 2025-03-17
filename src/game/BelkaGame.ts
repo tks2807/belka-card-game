@@ -36,7 +36,7 @@ interface ExtendedGameState {
 }
 
 export class BelkaGame {
-    public state: ExtendedGameState;
+    private state: ExtendedGameState;
     private statsService: StatsService;
     
     constructor(chatId: number) {
