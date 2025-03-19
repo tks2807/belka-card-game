@@ -85,7 +85,6 @@ for (const key in cardStickers) {
 bot.telegram.setMyCommands([
     { command: 'join', description: 'Присоединиться к игре' },
     { command: 'startbelka', description: 'Начать игру' },
-    { command: 'cards', description: 'Показать свои карты' },
     { command: 'state', description: 'Показать текущее состояние игры' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
     { command: 'clearbot', description: 'Сбросить текущую игру' },
@@ -212,7 +211,6 @@ bot.help((ctx) => {
 Команды:
 /join - Присоединиться к игре
 /startbelka - Начать игру
-/cards - Показать свои карты
 /state - Показать текущее состояние игры
 /endgame - Проголосовать за завершение игры
 /clearbot - Сбросить текущую игру (в случае проблем)
@@ -342,7 +340,7 @@ bot.command('startbelka', async (ctx) => {
         }
         
         // Запускаем игру
-        game.startGame();
+        const gameSummary = game.startGame();
         
         // Получаем обновленное состояние игры
         const updatedState = game.getGameState();
@@ -356,62 +354,28 @@ bot.command('startbelka', async (ctx) => {
             });
         });
         
-        // Отправляем общее состояние игры в чат
-        await ctx.reply(getPublicGameState(updatedState));
+        // Отправляем информацию о начальном состоянии игры в чат
+        await ctx.reply(gameSummary, {
+          reply_markup: {
+              inline_keyboard: [[
+                  { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+              ]]
+          }
+      });
         
         // Отправляем сообщение о том, что игроки могут посмотреть свои карты
         const botInfo = await ctx.telegram.getMe();
         if (botInfo && botInfo.username) {
             await ctx.reply(`Игра началась! Вы можете:
-1) Использовать команду /cards, чтобы увидеть свои карты в виде стикеров
-2) Начать вводить @${botInfo.username} в строке сообщения, чтобы увидеть доступные карты
-3) Отправить текстом название карты (например: "♠7" или "♥K")`);
+1) Начинайте вводить @${botInfo.username} в строке сообщения, чтобы выбрать карту
+2) Для хода виртуальных игроков используйте: /play2, /play3, /play4`);
         } else {
-            await ctx.reply('Игра началась! Используйте команду /cards, чтобы увидеть свои карты в виде стикеров и сделать ход.');
+            await ctx.reply('Игра началась! Отправьте название карты в чат для хода (например: "♠7" или "♥K").');
         }
         
     } catch (error) {
         console.error('Ошибка в команде /startbelka:', error);
         await ctx.reply('Произошла ошибка при запуске игры');
-    }
-});
-
-// Обработчик команды /cards
-bot.command('cards', async (ctx) => {
-    try {
-        const chatId = ctx.chat?.id;
-        const userId = ctx.from?.id;
-        if (!chatId || !userId) return;
-
-        const game = games.get(chatId);
-        if (!game) {
-            await ctx.reply('Игра не найдена. Начните новую игру с помощью /startbelka');
-            return;
-        }
-
-        const gameState = game.getGameState();
-        const player = gameState.players.find(p => p.id === userId);
-        
-        if (!player) {
-            await ctx.reply('Вы не участвуете в игре');
-            return;
-        }
-
-        // Отправляем текстовое описание карт игрока
-        const cardsMessage = formatPlayerCards(player, gameState);
-        await ctx.reply(cardsMessage);
-
-        // Отправляем карты в виде стикеров и обновляем хранилище
-        await sendPlayerCardsAsStickers(ctx, player, gameState);
-        
-        // Добавляем инструкцию по использованию inline режима
-        const botInfo = await ctx.telegram.getMe();
-        if (botInfo && botInfo.username) {
-            await ctx.reply(`Чтобы быстро выбрать карту для хода, начните вводить @${botInfo.username} в сообщении и выберите карту из появившейся панели.`);
-        }
-    } catch (error) {
-        console.error('Ошибка в команде /cards:', error);
-        await ctx.reply('Произошла ошибка при отображении карт');
     }
 });
 
@@ -427,8 +391,9 @@ bot.command('state', async (ctx) => {
             return;
         }
 
-        const gameState = game.getGameState();
-        await ctx.reply(getPublicGameState(gameState));
+        // Получаем и отправляем информацию о текущем состоянии игры
+        const gameSummary = game.getGameSummary();
+        await ctx.reply(gameSummary);
     } catch (error) {
         console.error('Ошибка в команде /state:', error);
         await ctx.reply('Произошла ошибка при получении состояния игры');
@@ -575,7 +540,7 @@ bot.command('testgame', async (ctx) => {
             await ctx.reply(`Тестовая игра готова! Используйте /startbelka для начала игры.
             
 После начала игры:
-1) Просматривайте свои карты: /cards
+1) Начинайте вводить @${botInfo.username} в строке сообщения, чтобы выбрать карту
 2) Для хода виртуальных игроков используйте: /play2, /play3, /play4
 3) Вы также можете быстро делать ход, начав вводить @${botInfo.username} в строке сообщения`);
         } else {
@@ -684,9 +649,14 @@ function formatPlayerCards(player: Player, state: GameState): string {
 
     message += `\n\n${state.trump === null ? 'Козырей нет' : `Козырь: ${state.trump}`}`;
     
-    // Показываем информацию о держателе валета крести только после первого раунда
+    // Показываем значок козыря для держателя валета крести
     if (state.clubJackHolder && !state.hideClubJackHolder && player.id === state.clubJackHolder.id) {
-        message += ` (ваш козырь)`;
+        message += " 🃏";
+    }
+    
+    // Добавляем информацию о мастях игроков только после первого раунда
+    if (state.currentRound > 1 && state.playerSuitMap && state.playerSuitMap.has(player.id)) {
+        message += ` (${state.playerSuitMap.get(player.id)})`;
     }
     
     const isCurrentPlayer = state.players[state.currentPlayerIndex]?.id === player.id;
@@ -737,7 +707,7 @@ function getPublicGameState(state: GameState): string {
     let message = `🃏 Раунд ${state.currentRound}\n`;
     message += `♠️♣️♦️♥️ Козырь: ${state.trump}`;
     
-    // Показываем информацию о держателе валета крести только после первого раунда
+    // Показываем значок козыря для держателя валета крести
     if (state.clubJackHolder && !state.hideClubJackHolder) {
         message += ` (определен игроком ${state.clubJackHolder.username})`;
     }
@@ -751,19 +721,17 @@ function getPublicGameState(state: GameState): string {
         if (player) {
             let playerName = player.username;
             
-            // Показываем информацию о козыре игрока только после первого раунда
+            // Показываем значок козыря для держателя валета крести
             if (state.clubJackHolder && !state.hideClubJackHolder && player.id === state.clubJackHolder.id) {
                 playerName += " 🃏";
             }
             
-            message += `- ${playerName} (${player.cards.length} карт)`;
-            
-            // Добавляем информацию о масти игрока
-            if (state.initialClubJackHolder && player.id === state.initialClubJackHolder.id) {
-                message += ` (♣)`;
-            } else if (state.playerSuitMap && state.playerSuitMap.has(player.id)) {
-                message += ` (${state.playerSuitMap.get(player.id)})`;
+            // Добавляем информацию о мастях игроков только после первого раунда
+            if (state.currentRound > 1 && state.playerSuitMap && state.playerSuitMap.has(player.id)) {
+                playerName += ` (${state.playerSuitMap.get(player.id)})`;
             }
+            
+            message += `- ${playerName} (${player.cards.length} карт)`;
             
             message += `\n`;
         }
@@ -778,19 +746,17 @@ function getPublicGameState(state: GameState): string {
         if (player) {
             let playerName = player.username;
             
-            // Показываем информацию о козыре игрока только после первого раунда
+            // Показываем значок козыря для держателя валета крести
             if (state.clubJackHolder && !state.hideClubJackHolder && player.id === state.clubJackHolder.id) {
                 playerName += " 🃏";
             }
             
-            message += `- ${playerName} (${player.cards.length} карт)`;
-            
-            // Добавляем информацию о масти игрока
-            if (state.initialClubJackHolder && player.id === state.initialClubJackHolder.id) {
-                message += ` (♣)`;
-            } else if (state.playerSuitMap && state.playerSuitMap.has(player.id)) {
-                message += ` (${state.playerSuitMap.get(player.id)})`;
+            // Добавляем информацию о мастях игроков только после первого раунда
+            if (state.currentRound > 1 && state.playerSuitMap && state.playerSuitMap.has(player.id)) {
+                playerName += ` (${state.playerSuitMap.get(player.id)})`;
             }
+            
+            message += `- ${playerName} (${player.cards.length} карт)`;
             
             message += `\n`;
         }
@@ -817,8 +783,7 @@ function getPublicGameState(state: GameState): string {
     // Информация о текущем игроке
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (currentPlayer) {
-        message += `\n🎯 Сейчас ход: ${currentPlayer.username}`;
-        message += `\nИспользуйте команду /cards, чтобы увидеть свои карты в виде стикеров и сделать ход.`;
+        message += `\n🎯 Сейчас ход: @${currentPlayer.username}`;
     }
 
     return message;
@@ -1125,28 +1090,108 @@ bot.on(['sticker', 'text'], async (ctx) => {
             
             console.log(`[LOG] Результат хода:`, JSON.stringify(result, null, 2));
             
+            // Добавляем детальное логирование объекта result
+            console.log(`[LOG] Свойства объекта result:`);
+            console.log(`- success: ${result.success}`);
+            console.log(`- message: ${result.message || 'отсутствует'}`);
+            console.log(`- isRoundComplete: ${result.isRoundComplete}`);
+            console.log(`- isGameRoundComplete: ${result.isGameRoundComplete}`);
+            console.log(`- roundSummary: ${result.roundSummary ? 'присутствует' : 'отсутствует'}`);
+            console.log(`- roundResults: ${result.roundResults ? 'присутствует' : 'отсутствует'}`);
+            
             if (!result.success) {
                 console.log(`[LOG] Ход не удался: ${result.message}`);
                 await ctx.reply(result.message || 'Не удалось сделать ход');
                 return;
             }
 
-            // Отвечаем об успешном ходе
-            await ctx.reply(`${isCurrentPlayerVirtual ? effectivePlayer.username : 'Вы'} сходили картой ${cardInfo.suit}${cardInfo.rank}`);
-            
+            // Добавляем подробное логирование
+            console.log(`[LOG] isRoundComplete: ${result.isRoundComplete}`);
+            console.log(`[LOG] isGameRoundComplete: ${result.isGameRoundComplete}`);
+            console.log(`[LOG] roundSummary exists: ${!!result.roundSummary}`);
+            console.log(`[LOG] roundResults exists: ${!!result.roundResults}`);
+
             // Если раунд завершен, отправляем сводку
             if (result.isRoundComplete && result.roundSummary) {
-                await ctx.reply(result.roundSummary);
+                console.log(`[LOG] Отправка сводки раунда: ${result.roundSummary.substring(0, 50)}...`);
+                await ctx.reply(result.roundSummary, {
+                  reply_markup: {
+                      inline_keyboard: [[
+                          { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                      ]]
+                  }
+              });
                 
                 // Если раунд игры завершен (все карты сыграны), отправляем результаты раунда
                 if (result.isGameRoundComplete && result.roundResults) {
+                    console.log(`[LOG] Отправка результатов раунда: ${result.roundResults.substring(0, 50)}...`);
+                    await ctx.reply(result.roundResults, {
+                      reply_markup: {
+                          inline_keyboard: [[
+                              { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                          ]]
+                      }
+                  });
+                } else if (result.roundResults) {
+                    // Отправляем результаты раунда даже если isGameRoundComplete не установлено,
+                    // но результаты есть (возможный баг)
+                    console.log(`[LOG] isGameRoundComplete не установлено, но есть результаты раунда - отправляем`);
                     await ctx.reply(result.roundResults);
+                } else {
+                    console.log(`[LOG] Внимание: результаты раунда не отправлены. isGameRoundComplete: ${result.isGameRoundComplete}, roundResults: ${!!result.roundResults}`);
                 }
             }
 
-            // Получаем обновленное состояние игры
+            // Получаем обновленное состояние игры для формирования сообщения
             const updatedState = game.getGameState();
-            
+            const newCurrentPlayer = updatedState.players[updatedState.currentPlayerIndex];
+
+            // Отправляем сообщение о ходе только если раунд не завершен
+            if (!result.isRoundComplete) {
+                // Формируем сообщение о ходе в новом формате
+                let moveMessage = '🎮 На столе:\n';
+                updatedState.tableCards.forEach(tableCard => {
+                    if (!tableCard) return; // Пропускаем, если карта не определена
+                    
+                    const player = updatedState.players.find(p => p && p.id === tableCard.playerId);
+                    if (player) {
+                        moveMessage += `${player.username}: ${tableCard.card.suit}${tableCard.card.rank}\n`;
+                    } else {
+                        moveMessage += `Неизвестный игрок: ${tableCard.card.suit}${tableCard.card.rank}\n`;
+                    }
+                });
+
+                // Добавляем информацию о следующем игроке
+                if (newCurrentPlayer) {
+                    moveMessage += `\n🎯 Сейчас ход: @${newCurrentPlayer.username}`;
+                }
+
+                await ctx.reply(moveMessage, {
+                  reply_markup: {
+                      inline_keyboard: [[
+                          { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                      ]]
+                  }
+                });
+
+                // Проверяем, является ли новый текущий игрок виртуальным и отправляем дополнительное сообщение для удобства
+                if (newCurrentPlayer) {
+                    const isNewCurrentPlayerVirtual = isTestGame && (newCurrentPlayer.id === userId + 1000 || 
+                                                                newCurrentPlayer.id === userId + 2000 || 
+                                                                newCurrentPlayer.id === userId + 3000);
+                    
+                    if (isNewCurrentPlayerVirtual) {
+                        // Определяем номер команды для виртуального игрока
+                        let virtualPlayerCommand = '';
+                        if (newCurrentPlayer.id === userId + 1000) virtualPlayerCommand = '/play2';
+                        else if (newCurrentPlayer.id === userId + 2000) virtualPlayerCommand = '/play3';
+                        else virtualPlayerCommand = '/play4';
+                        
+                        await ctx.reply(`Ход виртуального игрока ${newCurrentPlayer.username}! Используйте ${virtualPlayerCommand}, чтобы увидеть его карты и сделать ход.`);
+                    }
+                }
+            }
+
             // Обновляем карты в хранилище для всех игроков
             updatedState.players.forEach(player => {
                 if (player.cards.length > 0) {
@@ -1158,30 +1203,6 @@ bot.on(['sticker', 'text'], async (ctx) => {
                     playerCardsInPrivateChat.delete(player.id);
                 }
             });
-            
-            // Отправляем обновленное состояние игры в чат
-            await ctx.reply(getPublicGameState(updatedState));
-            
-            // Сообщаем текущему игроку, что его ход
-            const newCurrentPlayer = updatedState.players[updatedState.currentPlayerIndex];
-            if (newCurrentPlayer) {
-                // Проверяем, является ли новый текущий игрок виртуальным
-                const isNewCurrentPlayerVirtual = isTestGame && (newCurrentPlayer.id === userId + 1000 || 
-                                                           newCurrentPlayer.id === userId + 2000 || 
-                                                           newCurrentPlayer.id === userId + 3000);
-                
-                if (isNewCurrentPlayerVirtual) {
-                    // Определяем номер команды для виртуального игрока
-                    let virtualPlayerCommand = '';
-                    if (newCurrentPlayer.id === userId + 1000) virtualPlayerCommand = '/play2';
-                    else if (newCurrentPlayer.id === userId + 2000) virtualPlayerCommand = '/play3';
-                    else virtualPlayerCommand = '/play4';
-                    
-                    await ctx.reply(`Ход виртуального игрока ${newCurrentPlayer.username}! Используйте ${virtualPlayerCommand}, чтобы увидеть его карты и сделать ход.`);
-                } else {
-                    await ctx.reply(`@${newCurrentPlayer.username}, ваш ход! Используйте /cards, чтобы увидеть свои карты или начните писать @ваш_бот в чате для быстрого выбора.`);
-                }
-            }
         } else {
             // Стикер не распознан как карта
             console.log(`[LOG] Не удалось определить карту по стикеру или тексту`);

@@ -145,9 +145,9 @@ export class BelkaGame {
         return true;
     }
 
-    public startGame(): void {
+    public startGame(): string {
         if (this.state.isActive) {
-            return;
+            return "Игра уже запущена!";
         }
 
         this.state.isActive = true;
@@ -195,6 +195,9 @@ export class BelkaGame {
                 break;
             }
         }
+
+        // Возвращаем информацию о начальном состоянии игры
+        return this.getGameSummary();
     }
 
     private dealCards(): void {
@@ -297,9 +300,13 @@ export class BelkaGame {
             // Проверяем, закончились ли карты у всех игроков
             const allCardsPlayed = this.state.players.every(player => player.cards.length === 0);
             
+            console.log(`[LOG] Проверка окончания карт у всех игроков: ${allCardsPlayed}`);
+            
             if (allCardsPlayed) {
                 // Если все карты сыграны, подводим итоги раунда
+                console.log(`[LOG] Все карты сыграны, формируем результаты раунда`);
                 const roundResults = this.finishRound();
+                console.log(`[LOG] Результаты раунда сформированы, длина: ${roundResults.length}`);
                 
                 return { 
                     success: true, 
@@ -328,6 +335,104 @@ export class BelkaGame {
     private resolveRound(): void {
         if (this.state.tableCards.length !== 4) {
             throw new Error("Невозможно завершить раунд: на столе не 4 карты");
+        }
+
+        // Определяем победителя, используя вспомогательный метод
+        // Так как мы уже проверили, что на столе 4 карты, метод determineRoundWinner() вернет правильного победителя
+        const winningPlayerId = this.determineRoundWinner();
+        const winningPlayer = this.state.players.find(p => p.id === winningPlayerId);
+        
+        if (!winningPlayer) {
+            throw new Error("Не удалось найти победителя раунда");
+        }
+        
+        // Определяем команду победителя
+        const winningTeam = this.state.teams.team1.players.some(p => p.id === winningPlayerId) ? 1 : 2;
+        
+        // Начисляем очки команде победителя
+        let roundScore = 0;
+        for (const tableCard of this.state.tableCards) {
+            roundScore += this.getCardPoints(tableCard.card);
+        }
+        
+        if (winningTeam === 1) {
+            this.state.teams.team1.score += roundScore;
+            this.state.teams.team1.tricks += 1;
+        } else {
+            this.state.teams.team2.score += roundScore;
+            this.state.teams.team2.tricks += 1;
+        }
+        
+        // Устанавливаем следующего игрока (победитель ходит первым)
+        this.state.currentPlayerIndex = this.state.players.findIndex(p => p.id === winningPlayerId);
+        
+        // Очищаем стол
+        this.state.tableCards = [];
+    }
+
+    // Вспомогательный метод для определения значения валета по масти
+    private getJackValue(suit: CardSuit): number {
+        const jackHierarchy: { [key in CardSuit]?: number } = {
+            '♣': 4, // крести (высший)
+            '♠': 3, // пики
+            '♥': 2, // черви
+            '♦': 1  // буби (низший)
+        };
+        
+        return jackHierarchy[suit] || 0;
+    }
+
+    // Вспомогательный метод для определения значения карты
+    private getCardValue(card: Card): number {
+        const valueMap: { [key: string]: number } = {
+            '7': 1,
+            '8': 2,
+            '9': 3,
+            'Q': 4,
+            'K': 5,
+            '10': 6,
+            'A': 7,
+            'J': 8 // Валеты имеют наивысшее значение
+        };
+        
+        return valueMap[card.rank] || 0;
+    }
+
+    private createRoundSummary(): string {
+        let summary = '🃏 Карты на столе:\n';
+        
+        // Показываем все карты на столе
+        this.state.tableCards.forEach(tableCard => {
+            if (!tableCard) return; // Пропускаем, если карта не определена
+            
+            const player = this.state.players.find(p => p.id === tableCard.playerId);
+            if (!player) return; // Пропускаем, если игрок не найден
+            
+            summary += `${player.username}: ${tableCard.card.suit}${tableCard.card.rank}\n`;
+        });
+        
+        // Определяем победителя или следующего игрока
+        const nextPlayerId = this.determineRoundWinner();
+        const nextPlayer = this.state.players.find(p => p.id === nextPlayerId);
+        
+        if (nextPlayer) {
+            // Если на столе уже все карты, показываем, кто забирает взятку
+            if (this.state.tableCards.length === this.state.players.length) {
+                summary += `\n🏆 Взятку забирает: ${nextPlayer.username}`;
+            }
+            // В любом случае показываем, чей следующий ход
+            summary += `\n🎯 Следующий ход: @${nextPlayer.username}`;
+        }
+        
+        return summary;
+    }
+
+    // Вспомогательный метод для определения победителя раунда
+    private determineRoundWinner(): number {
+        if (this.state.tableCards.length !== 4) {
+            // Если на столе еще не все карты, "победителя" еще нет
+            // Возвращаем ID текущего игрока как "следующего"
+            return this.state.players[this.state.currentPlayerIndex].id;
         }
 
         // Определяем первую карту и ее масть
@@ -388,85 +493,8 @@ export class BelkaGame {
             }
         }
         
-        // Определяем победителя
-        const winningPlayerId = this.state.tableCards[winningCardIndex].playerId;
-        const winningPlayer = this.state.players.find(p => p.id === winningPlayerId);
-        
-        if (!winningPlayer) {
-            throw new Error("Не удалось найти победителя раунда");
-        }
-        
-        // Определяем команду победителя
-        const winningTeam = this.state.teams.team1.players.some(p => p.id === winningPlayerId) ? 1 : 2;
-        
-        // Начисляем очки команде победителя
-        let roundScore = 0;
-        for (const tableCard of this.state.tableCards) {
-            roundScore += this.getCardPoints(tableCard.card);
-        }
-        
-        if (winningTeam === 1) {
-            this.state.teams.team1.score += roundScore;
-            this.state.teams.team1.tricks += 1;
-        } else {
-            this.state.teams.team2.score += roundScore;
-            this.state.teams.team2.tricks += 1;
-        }
-        
-        // Устанавливаем следующего игрока (победитель ходит первым)
-        this.state.currentPlayerIndex = this.state.players.findIndex(p => p.id === winningPlayerId);
-        
-        // Очищаем стол
-        this.state.tableCards = [];
-        
-        // Проверяем, закончилась ли игра
-        if (this.state.players.every(p => p.cards.length === 0)) {
-            this.finishRound();
-        }
-    }
-
-    // Вспомогательный метод для определения значения валета по масти
-    private getJackValue(suit: CardSuit): number {
-        const jackHierarchy: { [key in CardSuit]?: number } = {
-            '♣': 4, // крести (высший)
-            '♠': 3, // пики
-            '♥': 2, // черви
-            '♦': 1  // буби (низший)
-        };
-        
-        return jackHierarchy[suit] || 0;
-    }
-
-    // Вспомогательный метод для определения значения карты
-    private getCardValue(card: Card): number {
-        const valueMap: { [key: string]: number } = {
-            '7': 1,
-            '8': 2,
-            '9': 3,
-            'Q': 4,
-            'K': 5,
-            '10': 6,
-            'A': 7,
-            'J': 8 // Валеты имеют наивысшее значение
-        };
-        
-        return valueMap[card.rank] || 0;
-    }
-
-    private createRoundSummary(): string {
-        let summary = '🃏 Карты на столе:\n';
-        
-        // Показываем все карты на столе
-        this.state.tableCards.forEach(tableCard => {
-            if (!tableCard) return; // Пропускаем, если карта не определена
-            
-            const player = this.state.players.find(p => p.id === tableCard.playerId);
-            if (!player) return; // Пропускаем, если игрок не найден
-            
-            summary += `${player.username}: ${tableCard.card.suit}${tableCard.card.rank}\n`;
-        });
-        
-        return summary;
+        // Возвращаем ID победителя
+        return this.state.tableCards[winningCardIndex].playerId;
     }
 
     private getJackPriority(suit: CardSuit): number {
@@ -623,6 +651,11 @@ export class BelkaGame {
         let team1Eyes = 0;
         let team2Eyes = 0;
         
+        // Определяем победителя раунда
+        const team1Won = this.state.teams.team1.score > this.state.teams.team2.score;
+        const team2Won = this.state.teams.team2.score > this.state.teams.team1.score;
+        const isTie = this.state.teams.team1.score === this.state.teams.team2.score;
+        
         // Проверка на "голую"
         if (this.state.teams.team1.score === 120 && this.state.teams.team2.tricks === 0) {
             this.endGame(true, 1);
@@ -641,10 +674,10 @@ export class BelkaGame {
         
         // После 1-го раунда выигравшей команде всегда 2 глаза
         if (this.state.currentRound === 1) {
-            if (this.state.teams.team1.score > this.state.teams.team2.score) {
+            if (team1Won) {
                 this.state.teams.team1.eyes += 2;
                 team1Eyes = 2;
-            } else if (this.state.teams.team2.score > this.state.teams.team1.score) {
+            } else if (team2Won) {
                 this.state.teams.team2.eyes += 2;
                 team2Eyes = 2;
             }
@@ -667,18 +700,18 @@ export class BelkaGame {
             }
         }
         
-        // Проверяем, у кого валет крести и добавляем дополнительный глаз
-        if (this.state.clubJackHolder) {
+        // Проверяем, у кого валет крести и добавляем дополнительный глаз (только не в первом раунде)
+        if (this.state.clubJackHolder && this.state.currentRound > 1) {
             const isClubJackInTeam1 = this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id);
             
             // Если валет крести у команды 2, а выиграла команда 1
-            if (!isClubJackInTeam1 && this.state.teams.team1.score > this.state.teams.team2.score) {
+            if (!isClubJackInTeam1 && team1Won) {
                 this.state.teams.team1.eyes += 1;
                 team1Eyes += 1;
             }
             
             // Если валет крести у команды 1, а выиграла команда 2
-            if (isClubJackInTeam1 && this.state.teams.team2.score > this.state.teams.team1.score) {
+            if (isClubJackInTeam1 && team2Won) {
                 this.state.teams.team2.eyes += 1;
                 team2Eyes += 1;
             }
@@ -686,57 +719,107 @@ export class BelkaGame {
         
         // Формируем сообщение с результатами раунда
         let results = `📊 Результаты раунда ${this.state.currentRound}:\n\n`;
-        results += `Команда 1:\n`;
-        results += `Очки: ${this.state.teams.team1.score}\n`;
-        results += `Взятки: ${this.state.teams.team1.tricks}\n`;
+        
+        // Добавляем информацию о победителе раунда
+        if (team1Won) {
+            results += `🏆 Победитель раунда: Команда 1\n\n`;
+        } else if (team2Won) {
+            results += `🏆 Победитель раунда: Команда 2\n\n`;
+        } else if (isTie) {
+            results += `🥚 Ничья (Яйца)! Обе команды набрали по ${this.state.teams.team1.score} очков.\n\n`;
+        }
+        
+        results += `👥 Команда 1:\n`;
+        // Список игроков команды 1
+        this.state.teams.team1.players.forEach(player => {
+            let playerName = player.username;
+            
+            // Показываем значок козыря для держателя валета крести
+            if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
+                playerName += " 🃏";
+            }
+            
+            // Добавляем информацию о мастях игроков только после первого раунда
+            if (this.state.currentRound > 1) {
+                if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
+                    playerName += ` (♣)`;
+                } else if (this.state.playerSuitMap.has(player.id)) {
+                    playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
+                }
+            }
+            
+            results += `- ${playerName}\n`;
+        });
+        
+        results += `💯 Очки в раунде: ${this.state.teams.team1.score}\n`;
+        results += `👑 Взятки: ${this.state.teams.team1.tricks}\n`;
         
         // Добавляем информацию о глазах
-        if (this.state.currentRound === 1 && this.state.teams.team1.score > this.state.teams.team2.score) {
-            results += `Глаза в этом раунде: +${team1Eyes} (первый раунд)\n`;
-        } else if (this.state.clubJackHolder && 
+        if (this.state.currentRound === 1 && team1Won) {
+            results += `👁️ Глаза в этом раунде: +${team1Eyes} (первый раунд)\n`;
+        } else if (this.state.currentRound > 1 && this.state.clubJackHolder && 
             !this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) && 
-            this.state.teams.team1.score > this.state.teams.team2.score) {
-            results += `Глаза в этом раунде: +${team1Eyes} (включая +1 за валета крести у соперников)\n`;
+            team1Won) {
+            results += `👁️ Глаза в этом раунде: +${team1Eyes} (включая +1 за валета крести у соперников)\n`;
         } else {
-            results += `Глаза в этом раунде: +${team1Eyes}\n`;
+            results += `👁️ Глаза в этом раунде: +${team1Eyes}\n`;
         }
         
-        results += `Всего глаз: ${this.state.teams.team1.eyes}\n\n`;
+        results += `👁️ Всего глаз: ${this.state.teams.team1.eyes}\n\n`;
         
-        results += `Команда 2:\n`;
-        results += `Очки: ${this.state.teams.team2.score}\n`;
-        results += `Взятки: ${this.state.teams.team2.tricks}\n`;
+        results += `👥 Команда 2:\n`;
+        // Список игроков команды 2
+        this.state.teams.team2.players.forEach(player => {
+            let playerName = player.username;
+            
+            // Показываем значок козыря для держателя валета крести
+            if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
+                playerName += " 🃏";
+            }
+            
+            // Добавляем информацию о мастях игроков только после первого раунда
+            if (this.state.currentRound > 1) {
+                if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
+                    playerName += ` (♣)`;
+                } else if (this.state.playerSuitMap.has(player.id)) {
+                    playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
+                }
+            }
+            
+            results += `- ${playerName}\n`;
+        });
+        
+        results += `💯 Очки в раунде: ${this.state.teams.team2.score}\n`;
+        results += `👑 Взятки: ${this.state.teams.team2.tricks}\n`;
         
         // Добавляем информацию о глазах
-        if (this.state.currentRound === 1 && this.state.teams.team2.score > this.state.teams.team1.score) {
-            results += `Глаза в этом раунде: +${team2Eyes} (первый раунд)\n`;
-        } else if (this.state.clubJackHolder && 
+        if (this.state.currentRound === 1 && team2Won) {
+            results += `👁️ Глаза в этом раунде: +${team2Eyes} (первый раунд)\n`;
+        } else if (this.state.currentRound > 1 && this.state.clubJackHolder && 
             this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) && 
-            this.state.teams.team2.score > this.state.teams.team1.score) {
-            results += `Глаза в этом раунде: +${team2Eyes} (включая +1 за валета крести у соперников)\n`;
+            team2Won) {
+            results += `👁️ Глаза в этом раунде: +${team2Eyes} (включая +1 за валета крести у соперников)\n`;
         } else {
-            results += `Глаза в этом раунде: +${team2Eyes}\n`;
+            results += `👁️ Глаза в этом раунде: +${team2Eyes}\n`;
         }
         
-        results += `Всего глаз: ${this.state.teams.team2.eyes}\n`;
+        results += `👁️ Всего глаз: ${this.state.teams.team2.eyes}\n`;
         
         // Проверка на победу по глазам
         if (this.state.teams.team1.eyes >= 12) {
             this.endGame(false, 1);
-            results += "\n🏆 Команда 1 набрала 12 глаз! Игра окончена!";
+            results += "\n🏆🏆🏆 Команда 1 набрала 12 глаз! Игра окончена!";
         } else if (this.state.teams.team2.eyes >= 12) {
             this.endGame(false, 2);
-            results += "\n🏆 Команда 2 набрала 12 глаз! Игра окончена!";
+            results += "\n🏆🏆🏆 Команда 2 набрала 12 глаз! Игра окончена!";
         } else {
             // Если никто не выиграл, начинаем новый раунд
             this.startNewRound();
-            results += `\n🃏 Начинается раунд ${this.state.currentRound}!`;
-            results += `\n♠️♣️♦️♥️ Козырь: ${this.state.trump}`;
+            results += `\n🃏 Начинается раунд ${this.state.currentRound}!\n\n`;
             
-            // Добавляем информацию о держателе валета крести только после первого раунда
-            if (this.state.clubJackHolder && !this.state.hideClubJackHolder) {
-                results += ` (определен игроком ${this.state.clubJackHolder.username})`;
-            }
+            // Добавляем информацию о новом раунде из getGameSummary()
+            const newRoundSummary = this.getGameSummary();
+            results += newRoundSummary;
         }
         
         return results;
@@ -788,35 +871,61 @@ export class BelkaGame {
         }
         
         summary += `\n\n`;
-        
+
         // Информация о командах
         summary += '👥 Команда 1:\n';
         this.state.teams.team1.players.forEach(player => {
-            summary += `- ${player.username}`;
-            if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
-                summary += ` (♣)`;
-            } else if (this.state.playerSuitMap.has(player.id)) {
-                summary += ` (${this.state.playerSuitMap.get(player.id)})`;
+            let playerName = player.username;
+            
+            // Показываем значок козыря для держателя валета крести
+            if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
+                playerName += " 🃏";
             }
-            summary += `\n`;
+            
+            // Добавляем информацию о мастях игроков только после первого раунда
+            if (this.state.currentRound > 1) {
+                if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
+                    playerName += ` (♣)`;
+                } else if (this.state.playerSuitMap.has(player.id)) {
+                    playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
+                }
+            }
+            
+            summary += `- ${playerName}\n`;
         });
-        summary += `Очки в раунде: ${this.state.teams.team1.score}\n`;
-        summary += `Взятки: ${this.state.teams.team1.tricks}\n`;
-        summary += `Глаза: ${this.state.teams.team1.eyes}\n\n`;
+        
+        // Добавляем отступ между списком игроков и информацией о глазах
+        summary += `\n👁️ Глаза: ${this.state.teams.team1.eyes}\n\n`;
 
         summary += '👥 Команда 2:\n';
         this.state.teams.team2.players.forEach(player => {
-            summary += `- ${player.username}`;
-            if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
-                summary += ` (♣)`;
-            } else if (this.state.playerSuitMap.has(player.id)) {
-                summary += ` (${this.state.playerSuitMap.get(player.id)})`;
+            let playerName = player.username;
+            
+            // Показываем значок козыря для держателя валета крести
+            if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
+                playerName += " 🃏";
             }
-            summary += `\n`;
+            
+            // Добавляем информацию о мастях игроков только после первого раунда
+            if (this.state.currentRound > 1) {
+                if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
+                    playerName += ` (♣)`;
+                } else if (this.state.playerSuitMap.has(player.id)) {
+                    playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
+                }
+            }
+            
+            summary += `- ${playerName}\n`;
         });
-        summary += `Очки в раунде: ${this.state.teams.team2.score}\n`;
-        summary += `Взятки: ${this.state.teams.team2.tricks}\n`;
-        summary += `Глаза: ${this.state.teams.team2.eyes}\n`;
+        
+        // Добавляем отступ между списком игроков и информацией о глазах
+        summary += `\n👁️ Глаза: ${this.state.teams.team2.eyes}\n`;
+        
+        // Добавляем информацию о том, чей первый ход
+        const currentPlayer = this.state.players[this.state.currentPlayerIndex];
+        if (currentPlayer) {
+            summary += `\n🎯 Первый ход: @${currentPlayer.username}`;
+        }
 
         return summary;
     }
