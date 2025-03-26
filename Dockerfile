@@ -12,15 +12,15 @@ COPY package*.json ./
 # Install ALL dependencies (including devDependencies)
 RUN npm install
 
-# Install Angular CLI and build package globally
+# Install Angular CLI and build packages globally
 RUN npm install -g @angular/cli @angular-devkit/build-angular
 
 # Copy the rest of the application
 COPY . .
 
-# Install project dependencies specifically
-RUN npm install --save-dev @angular-devkit/build-angular
-RUN npm install @angular/core @angular/platform-browser @angular/platform-browser-dynamic @angular/router tslib
+# Install all necessary Angular dependencies
+RUN npm install --save @angular/core @angular/common @angular/platform-browser @angular/platform-browser-dynamic @angular/router @angular/forms @angular/compiler tslib rxjs zone.js
+RUN npm install --save-dev @angular-devkit/build-angular @angular/compiler-cli @angular/language-service @types/node typescript
 
 # Build the Angular application
 RUN ng build --configuration production
