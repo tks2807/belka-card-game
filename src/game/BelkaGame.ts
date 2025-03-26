@@ -34,6 +34,7 @@ interface ExtendedGameState {
     playerSuitMap: Map<number, CardSuit>; // Соответствие игроков и мастей для козырей
     hideClubJackHolder: boolean;
     eggsTiebreaker: boolean;
+    gameMode: 'belka' | 'walka'; // Режим игры: "белка" до 12 глаз или "валка" до 6 глаз
 }
 
 export class BelkaGame {
@@ -71,7 +72,8 @@ export class BelkaGame {
             initialClubJackHolder: null,
             playerSuitMap: new Map(),
             hideClubJackHolder: true,
-            eggsTiebreaker: false
+            eggsTiebreaker: false,
+            gameMode: 'belka' // По умолчанию режим "белка"
         };
     }
 
@@ -147,7 +149,7 @@ export class BelkaGame {
         return true;
     }
 
-    public startGame(): string {
+    public startGame(mode: 'belka' | 'walka' = 'belka'): string {
         if (this.state.isActive) {
             return "Игра уже запущена!";
         }
@@ -161,6 +163,9 @@ export class BelkaGame {
         this.state.playerSuitMap.clear();
         this.state.initialClubJackHolder = null;
         this.state.clubJackHolder = null;
+        this.state.gameMode = mode;
+
+        console.log(`[LOG] Запуск игры в режиме: ${mode}`);
 
         // Создаем и перемешиваем колоду
         this.state.deck = this.createDeck();
@@ -549,13 +554,16 @@ export class BelkaGame {
             this.state.teams.team2.eyes += 1;
         }
         
+        // Определяем необходимое количество глаз для победы в зависимости от режима игры
+        const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
+        
         // Проверка на победу по глазам
-        if (this.state.teams.team1.eyes >= 12) {
+        if (this.state.teams.team1.eyes >= eyesToWin) {
             this.endGame(false, 1); // Добавляем второй параметр - номер команды
             return;
         }
         
-        if (this.state.teams.team2.eyes >= 12) {
+        if (this.state.teams.team2.eyes >= eyesToWin) {
             this.endGame(false, 2); // Добавляем второй параметр - номер команды
             return;
         }
@@ -844,13 +852,16 @@ export class BelkaGame {
         
         results += `👁️ Всего глаз: ${this.state.teams.team2.eyes}\n`;
         
+        // Определяем необходимое количество глаз для победы в зависимости от режима игры
+        const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
+        
         // Проверка на победу по глазам
-        if (this.state.teams.team1.eyes >= 12) {
+        if (this.state.teams.team1.eyes >= eyesToWin) {
             this.endGame(false, 1);
-            results += "\n🏆🏆🏆 Команда 1 набрала 12 глаз! Игра окончена!";
-        } else if (this.state.teams.team2.eyes >= 12) {
+            results += `\n🏆🏆🏆 Команда 1 набрала ${this.state.teams.team1.eyes} глаз (требуется ${eyesToWin})! Игра окончена!`;
+        } else if (this.state.teams.team2.eyes >= eyesToWin) {
             this.endGame(false, 2);
-            results += "\n🏆🏆🏆 Команда 2 набрала 12 глаз! Игра окончена!";
+            results += `\n🏆🏆🏆 Команда 2 набрала ${this.state.teams.team2.eyes} глаз (требуется ${eyesToWin})! Игра окончена!`;
         } else {
             // Если никто не выиграл, начинаем новый раунд
             this.startNewRound();
@@ -901,7 +912,12 @@ export class BelkaGame {
     }
 
     public getGameSummary(): string {
-        let summary = `🃏 Раунд ${this.state.currentRound}\n`;
+        // Определяем необходимое количество глаз для победы в зависимости от режима игры
+        const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
+        const gameModeName = this.state.gameMode === 'belka' ? 'Белка' : 'Валка';
+
+        let summary = `🎮 Режим игры: ${gameModeName} (до ${eyesToWin} глаз)\n`;
+        summary += `🃏 Раунд ${this.state.currentRound}\n`;
         summary += `♠️♣️♦️♥️ Козырь: ${this.state.trump}`;
         
         // Показываем информацию о держателе валета крести только после первого раунда
@@ -934,7 +950,7 @@ export class BelkaGame {
         });
         
         // Добавляем отступ между списком игроков и информацией о глазах
-        summary += `\n👁️ Глаза: ${this.state.teams.team1.eyes}\n\n`;
+        summary += `\n👁️ Глаза: ${this.state.teams.team1.eyes}/${eyesToWin}\n\n`;
 
         summary += '👥 Команда 2:\n';
         this.state.teams.team2.players.forEach(player => {
@@ -958,7 +974,7 @@ export class BelkaGame {
         });
         
         // Добавляем отступ между списком игроков и информацией о глазах
-        summary += `\n👁️ Глаза: ${this.state.teams.team2.eyes}\n`;
+        summary += `\n👁️ Глаза: ${this.state.teams.team2.eyes}/${eyesToWin}\n`;
         
         // Добавляем информацию о том, чей первый ход
         const currentPlayer = this.state.players[this.state.currentPlayerIndex];
@@ -1079,5 +1095,10 @@ export class BelkaGame {
         this.state.players.forEach(player => {
             console.log(`[LOG] ${player.username}: ${this.state.playerSuitMap.get(player.id)}`);
         });
+    }
+
+    public setGameMode(mode: 'belka' | 'walka'): void {
+        this.state.gameMode = mode;
+        console.log(`[LOG] Установлен режим игры: ${mode}`);
     }
 } 
