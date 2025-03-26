@@ -3,47 +3,35 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
+# Add Python and build tools for node-gyp
+RUN apk add --no-cache python3 make g++
+
 # Copy package files
 COPY package*.json ./
-COPY tsconfig*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install ALL dependencies (including devDependencies)
+RUN npm install
 
-# Copy source code
-COPY src/ ./src/
+# Install Angular CLI globally
+RUN npm install -g @angular/cli
 
-# Build the application
-RUN npm run build
+# Copy the rest of the application
+COPY . .
+
+# Build the Angular application
+RUN ng build --configuration production
 
 # Production stage
-FROM node:18-alpine
+FROM nginx:alpine
 
-WORKDIR /app
+# Copy built Angular files to nginx
+COPY --from=builder /app/dist/* /usr/share/nginx/html/
 
-# Copy package files
-COPY package*.json ./
+# Copy nginx configuration if you have custom config
+# COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Install production dependencies only
-RUN npm ci --only=production
+# Expose port 80
+EXPOSE 80
 
-# Copy built files from builder stage
-COPY --from=builder /app/dist ./dist
-
-# Copy config file
-COPY config.yaml ./
-
-# Create data directory for file storage
-RUN mkdir -p ./data
-
-# Create directory for logs
-RUN mkdir -p ./logs
-
-# Set environment variables
-ENV NODE_ENV=production
-
-# Run as non-root user for better security
-USER node
-
-# Command to run the application
-CMD ["node", "dist/index.js"]
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

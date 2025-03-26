@@ -1,21 +1,18 @@
 version: '3.8'
 
 services:
-  belka-bot:
+  belka-game:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: belka-bot
+    container_name: belka-game
     restart: unless-stopped
+    ports:
+      - "80:80"  # Map container's port 80 to host's port 80
     environment:
       - NODE_ENV=production
-      - BOT_TOKEN=${BOT_TOKEN}  # Will be loaded from .env file
-    volumes:
-      - ./data:/app/data  # Persist data
-      - ./logs:/app/logs  # Persist logs
-      - ./player_stats.json:/app/player_stats.json  # Persist player statistics
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
       interval: 30s
       timeout: 10s
-      retries: 3 
+      retries: 3
