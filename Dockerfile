@@ -12,11 +12,15 @@ COPY package*.json ./
 # Install ALL dependencies (including devDependencies)
 RUN npm install
 
-# Install Angular CLI globally
-RUN npm install -g @angular/cli
+# Install Angular CLI and build package globally
+RUN npm install -g @angular/cli @angular-devkit/build-angular
 
 # Copy the rest of the application
 COPY . .
+
+# Install project dependencies specifically
+RUN npm install --save-dev @angular-devkit/build-angular
+RUN npm install @angular/core @angular/platform-browser @angular/platform-browser-dynamic @angular/router tslib
 
 # Build the Angular application
 RUN ng build --configuration production
@@ -25,7 +29,7 @@ RUN ng build --configuration production
 FROM nginx:alpine
 
 # Copy built Angular files to nginx
-COPY --from=builder /app/dist/* /usr/share/nginx/html/
+COPY --from=builder /app/dist/belka-card-game/* /usr/share/nginx/html/
 
 # Copy nginx configuration if you have custom config
 # COPY nginx.conf /etc/nginx/conf.d/default.conf
