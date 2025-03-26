@@ -24,6 +24,9 @@ RUN npm install -g @angular/cli@15.2.0
 # Create necessary directories
 RUN mkdir -p data logs dist/bot
 
+# Copy TypeScript configs first
+COPY tsconfig*.json ./
+
 # Copy the rest of the application
 COPY . .
 
@@ -31,7 +34,6 @@ COPY . .
 RUN ng build --configuration production
 
 # Compile TypeScript bot files
-COPY tsconfig.bot.json ./
 RUN npx tsc --project tsconfig.bot.json
 
 # Production stage
