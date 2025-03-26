@@ -9,18 +9,17 @@ RUN apk add --no-cache python3 make g++
 # Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies)
+# Install dependencies from package.json
 RUN npm install
 
-# Install Angular CLI and build packages globally
-RUN npm install -g @angular/cli @angular-devkit/build-angular
+# Install Angular CLI 15 globally
+RUN npm install -g @angular/cli@15.2.0
 
 # Copy the rest of the application
 COPY . .
 
-# Install all necessary Angular dependencies
-RUN npm install --save @angular/core @angular/common @angular/platform-browser @angular/platform-browser-dynamic @angular/router @angular/forms @angular/compiler tslib rxjs zone.js
-RUN npm install --save-dev @angular-devkit/build-angular @angular/compiler-cli @angular/language-service @types/node typescript
+# Clean install to ensure correct dependencies
+RUN npm ci
 
 # Build the Angular application
 RUN ng build --configuration production
