@@ -7,9 +7,12 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
 
-# Install dependencies from package.json
+# Remove existing package-lock.json if it exists
+RUN rm -f package-lock.json
+
+# Install dependencies and generate new package-lock.json
 RUN npm install
 
 # Install Angular CLI 15 globally
@@ -17,9 +20,6 @@ RUN npm install -g @angular/cli@15.2.0
 
 # Copy the rest of the application
 COPY . .
-
-# Clean install to ensure correct dependencies
-RUN npm ci
 
 # Build the Angular application
 RUN ng build --configuration production
