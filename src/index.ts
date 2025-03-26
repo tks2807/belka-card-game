@@ -276,7 +276,13 @@ bot.command('join', async (ctx) => {
         if (!game) {
             game = new BelkaGame(chatId);
             games.set(chatId, game);
-            await ctx.reply('Создана новая игра. Вы присоединились к игре.');
+            // Добавляем пользователя в игру
+            const success = game.addPlayer({ id: userId, username, chatId });
+            if (success) {
+                await ctx.reply('Создана новая игра. Вы присоединились к игре.');
+            } else {
+                await ctx.reply('Ошибка при присоединении к игре.');
+            }
         } else {
             const gameState = game.getGameState();
             if (gameState.isActive) {
