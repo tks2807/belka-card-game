@@ -2,6 +2,7 @@ import { Telegraf, Markup, Context } from 'telegraf';
 import dotenv from 'dotenv';
 import { BelkaGame } from './game/BelkaGame';
 import { Player, CardSuit, Card, TableCard, GameState, CardRank } from './types/game.types';
+import { StatsService } from './services/StatsService';
 
 // Загружаем переменные окружения
 dotenv.config();
@@ -89,6 +90,8 @@ bot.telegram.setMyCommands([
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Валка - до 6 глаз)' },
     { command: 'state', description: 'Показать текущее состояние игры' },
+    { command: 'leaderboardall', description: 'Показать глобальную таблицу лидеров' },
+    { command: 'leaderboardchat', description: 'Показать таблицу лидеров для текущего чата' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'inline_setup', description: 'Инструкция по настройке инлайн-режима' }
@@ -215,6 +218,8 @@ bot.help((ctx) => {
 /startbelka - Начать игру в режиме "Белка" (до 12 глаз)
 /startwalka - Начать игру в режиме "Валка" (до 6 глаз) - быстрая игра
 /state - Показать текущее состояние игры
+/leaderboardall - Показать глобальную таблицу лидеров
+/leaderboardchat - Показать таблицу лидеров для текущего чата
 /endgame - Проголосовать за завершение игры
 /clearbot - Сбросить текущую игру (в случае проблем)
 /inline_setup - Инструкция по настройке инлайн-режима
@@ -474,6 +479,52 @@ bot.command('state', async (ctx) => {
         await ctx.reply('Произошла ошибка при получении состояния игры');
     }
 });
+
+const statsService = new StatsService();
+
+bot.command('leaderboardall', async (ctx) => {
+    try {
+      const leaderboardEntries = statsService.getLeaderboardAll();
+      if (leaderboardEntries.length === 0) {
+        await ctx.reply('Лидерборд пока пуст.');
+        return;
+      }
+      let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
+      leaderboardEntries.forEach(([playerId, stats], index) => {
+        message += `${index + 1}. ${stats.username}\n` +
+          `   Игры: ${stats.gamesPlayed}, Победы: ${stats.gamesWon}\n` +
+          `   Очки: ${stats.totalScore}, Взяток: ${stats.totalTricks}\n` +
+          `   Голые победы: ${stats.golayaCount}, Яйца: ${stats.eggsCount}\n\n`;
+      });
+      await ctx.reply(message);
+    } catch (error) {
+      console.error('Ошибка при получении глобального лидерборда:', error);
+      await ctx.reply('Произошла ошибка при получении глобального лидерборда.');
+    }
+  });
+
+  bot.command('leaderboardchat', async (ctx) => {
+    try {
+      const chatId = ctx.chat?.id;
+      if (!chatId) return;
+      const leaderboardEntries = statsService.getLeaderboardChat(chatId);
+      if (leaderboardEntries.length === 0) {
+        await ctx.reply('Лидерборд для этого чата пока пуст.');
+        return;
+      }
+      let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
+      leaderboardEntries.forEach(([playerId, stats], index) => {
+        message += `${index + 1}. ${stats.username}\n` +
+          `   Игры: ${stats.gamesPlayed}, Победы: ${stats.gamesWon}\n` +
+          `   Очки: ${stats.totalScore}, Взяток: ${stats.totalTricks}\n` +
+          `   Голая победа: ${stats.golayaCount}, Яйца: ${stats.eggsCount}\n\n`;
+      });
+      await ctx.reply(message);
+    } catch (error) {
+      console.error('Ошибка при получении лидерборда для чата:', error);
+      await ctx.reply('Произошла ошибка при получении лидерборда для этого чата.');
+    }
+  });
 
 // Обработчик команды /endgame
 bot.command('endgame', async (ctx) => {
