@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  belka-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: belka-bot
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - BOT_TOKEN=${BOT_TOKEN}  # Will be loaded from .env file
+    volumes:
+      - ./data:/app/data  # Persist data
+      - ./logs:/app/logs  # Persist logs
+      - ./player_stats.json:/app/player_stats.json  # Persist player statistics
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3 
