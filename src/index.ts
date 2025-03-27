@@ -1,5 +1,5 @@
 import { Telegraf, Markup, Context } from 'telegraf';
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 import { BelkaGame } from './game/BelkaGame';
 import { Player, CardSuit, Card, TableCard, GameState, CardRank } from './types/game.types';
 import { StatsService } from './services/StatsService';
