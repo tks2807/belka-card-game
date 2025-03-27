@@ -40,7 +40,7 @@ interface ExtendedGameState {
 export class BelkaGame {
     private state: ExtendedGameState;
     private statsService: StatsService;
-    
+
     constructor(chatId: number) {
         this.statsService = new StatsService();
         this.state = {
@@ -81,8 +81,8 @@ export class BelkaGame {
         const suits: CardSuit[] = ['♠', '♣', '♦', '♥'];
         const ranks: CardRank[] = ['7', '8', '9', 'Q', 'K', '10', 'A', 'J'];
         const values: { [key in CardRank]: number } = {
-            '7': 7, '8': 8, '9': 9, 
-            'Q': 10, 'K': 11, '10': 12, 
+            '7': 7, '8': 8, '9': 9,
+            'Q': 10, 'K': 11, '10': 12,
             'A': 13, 'J': 14
         };
 
@@ -173,7 +173,7 @@ export class BelkaGame {
 
         // Раздаем карты игрокам
         this.dealCards();
-        
+
         // Проверяем, нужна ли пересдача
         let needReshuffle = false;
         for (const player of this.state.players) {
@@ -183,7 +183,7 @@ export class BelkaGame {
                 break;
             }
         }
-        
+
         if (needReshuffle) {
             console.log(`[LOG] Выполняем пересдачу карт`);
             // Пересдаем карты
@@ -191,7 +191,7 @@ export class BelkaGame {
             this.shuffleDeck(this.state.deck);
             this.dealCards();
         }
-        
+
         // Находим игрока с валетом крести и устанавливаем его как initialClubJackHolder
         for (const player of this.state.players) {
             if (player.cards.some(card => card.rank === 'J' && card.suit === '♣')) {
@@ -201,13 +201,13 @@ export class BelkaGame {
                 break;
             }
         }
-        
+
         // Устанавливаем соответствие мастей для каждого игрока
         this.setupPlayerSuitMap();
-        
+
         // Определяем козырь для первого раунда (всегда крести)
         this.state.trump = '♣';
-        
+
         console.log(`[LOG] Инициализация игры завершена. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
 
         // Возвращаем информацию о начальном состоянии игры
@@ -229,11 +229,11 @@ export class BelkaGame {
 
     public makeMove(playerId: number, cardIndex: number): MoveResult {
         const playerIndex = this.state.players.findIndex(p => p.id === playerId);
-        
+
         if (playerIndex === -1) {
             return { success: false, message: 'Игрок не найден' };
         }
-        
+
         const player = this.state.players[playerIndex];
 
         if (!this.state.isActive) {
@@ -241,9 +241,9 @@ export class BelkaGame {
         }
 
         if (playerIndex !== this.state.currentPlayerIndex) {
-            return { 
-                success: false, 
-                message: `Сейчас не ваш ход! Ход игрока: ${this.state.players[this.state.currentPlayerIndex].username}` 
+            return {
+                success: false,
+                message: `Сейчас не ваш ход! Ход игрока: ${this.state.players[this.state.currentPlayerIndex].username}`
             };
         }
 
@@ -258,38 +258,38 @@ export class BelkaGame {
             const firstCard = this.state.tableCards[0].card;
             const firstCardSuit = firstCard.suit;
             const isFirstCardTrump = firstCardSuit === this.state.trump || firstCard.rank === 'J';
-            
+
             if (isFirstCardTrump) {
                 // Если первая карта козырная или валет
-                
+
                 // Проверяем, есть ли у игрока козыри (включая вальтов)
-                const hasTrump = player.cards.some(c => 
+                const hasTrump = player.cards.some(c =>
                     c.suit === this.state.trump || c.rank === 'J'
                 );
-                
+
                 // Проверяем, является ли текущая карта козырем или валетом
                 const isCardTrump = card.suit === this.state.trump || card.rank === 'J';
-                
+
                 if (hasTrump && !isCardTrump) {
                     // Если у игрока есть козыри (включая вальтов), но он пытается ходить не козырем
-                    return { 
-                        success: false, 
-                        message: `Нужно ходить козырем (включая вальтов), так как первая карта козырная` 
+                    return {
+                        success: false,
+                        message: `Нужно ходить козырем (включая вальтов), так как первая карта козырная`
                     };
                 }
             } else {
                 // Если первая карта не козырная и не валет
-                
+
                 // Проверяем, есть ли у игрока карты масти первой карты
                 const hasSuit = player.cards.some(c => c.suit === firstCardSuit && c.rank !== 'J');
-                
+
                 if (hasSuit) {
                     // Если у игрока есть карты масти первой карты
                     if (card.suit !== firstCardSuit || card.rank === 'J') {
                         // Если игрок пытается ходить другой мастью или валетом
-                        return { 
-                            success: false, 
-                            message: `Нужно ходить в масть ${firstCardSuit}, валеты нельзя использовать, если у вас есть карты нужной масти` 
+                        return {
+                            success: false,
+                            message: `Нужно ходить в масть ${firstCardSuit}, валеты нельзя использовать, если у вас есть карты нужной масти`
                         };
                     }
                 }
@@ -299,7 +299,7 @@ export class BelkaGame {
 
         // Удаляем карту из руки игрока
         player.cards.splice(cardIndex, 1);
-        
+
         // Добавляем карту на стол с информацией о том, кто её положил
         this.state.tableCards.push({ card, playerId });
 
@@ -307,23 +307,23 @@ export class BelkaGame {
         if (this.state.tableCards.length === this.state.players.length) {
             // Создаем сводку раунда перед разрешением
             const roundSummary = this.createRoundSummary();
-            
+
             // Разрешаем раунд и определяем победителя
             this.resolveRound();
 
             // Проверяем, закончились ли карты у всех игроков
             const allCardsPlayed = this.state.players.every(player => player.cards.length === 0);
-            
+
             console.log(`[LOG] Проверка окончания карт у всех игроков: ${allCardsPlayed}`);
-            
+
             if (allCardsPlayed) {
                 // Если все карты сыграны, подводим итоги раунда
                 console.log(`[LOG] Все карты сыграны, формируем результаты раунда`);
                 const roundResults = this.finishRound();
                 console.log(`[LOG] Результаты раунда сформированы, длина: ${roundResults.length}`);
-                
-                return { 
-                    success: true, 
+
+                return {
+                    success: true,
                     isRoundComplete: true,
                     isGameRoundComplete: true,
                     roundSummary,
@@ -331,15 +331,15 @@ export class BelkaGame {
                 };
             }
 
-            return { 
-                success: true, 
+            return {
+                success: true,
                 isRoundComplete: true,
                 roundSummary
             };
         } else {
             // Передаем ход следующему игроку
             this.state.currentPlayerIndex = (this.state.currentPlayerIndex + 1) % this.state.players.length;
-            return { 
+            return {
                 success: true,
                 message: `Ход передан игроку ${this.state.players[this.state.currentPlayerIndex].username}`
             };
@@ -355,20 +355,22 @@ export class BelkaGame {
         // Так как мы уже проверили, что на столе 4 карты, метод determineRoundWinner() вернет правильного победителя
         const winningPlayerId = this.determineRoundWinner();
         const winningPlayer = this.state.players.find(p => p.id === winningPlayerId);
-        
+
         if (!winningPlayer) {
             throw new Error("Не удалось найти победителя раунда");
         }
-        
+
+        winningPlayer.tricks = (winningPlayer.tricks || 0) + 1;
+
         // Определяем команду победителя
         const winningTeam = this.state.teams.team1.players.some(p => p.id === winningPlayerId) ? 1 : 2;
-        
+
         // Начисляем очки команде победителя
         let roundScore = 0;
         for (const tableCard of this.state.tableCards) {
             roundScore += this.getCardPoints(tableCard.card);
         }
-        
+
         if (winningTeam === 1) {
             this.state.teams.team1.score += roundScore;
             this.state.teams.team1.tricks += 1;
@@ -376,10 +378,10 @@ export class BelkaGame {
             this.state.teams.team2.score += roundScore;
             this.state.teams.team2.tricks += 1;
         }
-        
+
         // Устанавливаем следующего игрока (победитель ходит первым)
         this.state.currentPlayerIndex = this.state.players.findIndex(p => p.id === winningPlayerId);
-        
+
         // Очищаем стол
         this.state.tableCards = [];
     }
@@ -392,7 +394,7 @@ export class BelkaGame {
             '♥': 2, // черви
             '♦': 1  // буби (низший)
         };
-        
+
         return jackHierarchy[suit] || 0;
     }
 
@@ -408,27 +410,27 @@ export class BelkaGame {
             'A': 7,
             'J': 8 // Валеты имеют наивысшее значение
         };
-        
+
         return valueMap[card.rank] || 0;
     }
 
     private createRoundSummary(): string {
         let summary = '🃏 Карты на столе:\n';
-        
+
         // Показываем все карты на столе
         this.state.tableCards.forEach(tableCard => {
             if (!tableCard) return; // Пропускаем, если карта не определена
-            
+
             const player = this.state.players.find(p => p.id === tableCard.playerId);
             if (!player) return; // Пропускаем, если игрок не найден
-            
+
             summary += `${player.username}: ${tableCard.card.suit}${tableCard.card.rank}\n`;
         });
-        
+
         // Определяем победителя или следующего игрока
         const nextPlayerId = this.determineRoundWinner();
         const nextPlayer = this.state.players.find(p => p.id === nextPlayerId);
-        
+
         if (nextPlayer) {
             // Если на столе уже все карты, показываем, кто забирает взятку
             if (this.state.tableCards.length === this.state.players.length) {
@@ -437,7 +439,7 @@ export class BelkaGame {
             // В любом случае показываем, чей следующий ход
             summary += `\n🎯 Следующий ход: @${nextPlayer.username}`;
         }
-        
+
         return summary;
     }
 
@@ -452,43 +454,43 @@ export class BelkaGame {
         // Определяем первую карту и ее масть
         const firstCard = this.state.tableCards[0].card;
         const leadSuit = firstCard.suit;
-        
+
         // Определяем козырную масть
         const trumpSuit = this.state.trump;
-        
+
         let winningCardIndex = 0;
         let highestValue = this.getCardValue(this.state.tableCards[0].card);
-        
+
         for (let i = 1; i < this.state.tableCards.length; i++) {
             const currentCard = this.state.tableCards[i].card;
-            
+
             // Проверяем, является ли карта валетом (валеты всегда козыри)
             const isCurrentJack = currentCard.rank === 'J';
             const isWinningJack = this.state.tableCards[winningCardIndex].card.rank === 'J';
-            
+
             // Проверяем, является ли карта козырем
             const isCurrentTrump = currentCard.suit === trumpSuit || isCurrentJack;
             const isWinningTrump = this.state.tableCards[winningCardIndex].card.suit === trumpSuit || isWinningJack;
-            
+
             // Если текущая карта - валет, а выигрывающая - нет, или текущая карта - козырь, а выигрывающая - нет
             if ((isCurrentJack && !isWinningJack) || (isCurrentTrump && !isWinningTrump)) {
                 winningCardIndex = i;
                 highestValue = this.getCardValue(currentCard);
                 continue;
             }
-            
+
             // Если обе карты - валеты, сравниваем их по иерархии
             if (isCurrentJack && isWinningJack) {
                 const currentJackValue = this.getJackValue(currentCard.suit);
                 const winningJackValue = this.getJackValue(this.state.tableCards[winningCardIndex].card.suit);
-                
+
                 if (currentJackValue > winningJackValue) {
                     winningCardIndex = i;
                     highestValue = this.getCardValue(currentCard);
                 }
                 continue;
             }
-            
+
             // Если обе карты - козыри (но не валеты), сравниваем их по значению
             if (isCurrentTrump && isWinningTrump && !isCurrentJack && !isWinningJack) {
                 if (this.getCardValue(currentCard) > highestValue) {
@@ -497,7 +499,7 @@ export class BelkaGame {
                 }
                 continue;
             }
-            
+
             // Если ни одна из карт не козырь и не валет, и текущая карта той же масти, что и первая
             if (!isCurrentTrump && !isWinningTrump && currentCard.suit === leadSuit) {
                 if (this.getCardValue(currentCard) > highestValue) {
@@ -506,7 +508,7 @@ export class BelkaGame {
                 }
             }
         }
-        
+
         // Возвращаем ID победителя
         return this.state.tableCards[winningCardIndex].playerId;
     }
@@ -526,48 +528,60 @@ export class BelkaGame {
         if (this.state.teams.team1.score === 120 && this.state.teams.team2.tricks === 0) {
             this.endGame(true, 1); // Добавляем второй параметр - номер команды
             return;
-        } 
-        
+        }
+
         if (this.state.teams.team2.score === 120 && this.state.teams.team1.tricks === 0) {
             this.endGame(true, 2); // Добавляем второй параметр - номер команды
             return;
         }
-        
+
         // Проверка на "яйца" (по 60 очков)
         if (this.state.teams.team1.score === 60 && this.state.teams.team2.score === 60) {
+            this.state.players.forEach(player => {
+                this.statsService.updatePlayerStats(
+                    player.id,
+                    player.username,
+                    false,
+                    0,
+                    0,
+                    true,
+                    false,
+                    this.state.chatId
+                );
+            });
             // Логика для "яиц" - переигрываем раунд
             this.state.eggsTiebreaker = true; // Устанавливаем флаг переигровки
             this.startNewRound(); // Переигрываем раунд
             return;
         }
-        
+
         // Обычный подсчет глаз
         if (this.state.teams.team1.score >= 91) {
             this.state.teams.team1.eyes += 2;
         } else if (this.state.teams.team1.score >= 61) {
             this.state.teams.team1.eyes += 1;
         }
-        
+
         if (this.state.teams.team2.score >= 91) {
             this.state.teams.team2.eyes += 2;
         } else if (this.state.teams.team2.score >= 61) {
             this.state.teams.team2.eyes += 1;
         }
-        
+
         // Определяем необходимое количество глаз для победы в зависимости от режима игры
         const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
-        
+
         // Проверка на победу по глазам
         if (this.state.teams.team1.eyes >= eyesToWin) {
             this.endGame(false, 1); // Добавляем второй параметр - номер команды
             return;
         }
-        
+
         if (this.state.teams.team2.eyes >= eyesToWin) {
             this.endGame(false, 2); // Добавляем второй параметр - номер команды
             return;
         }
-        
+
         // Если никто не выиграл, начинаем новый раунд
         this.startNewRound();
     }
@@ -591,17 +605,17 @@ export class BelkaGame {
     private startNewRound(): void {
         this.state.currentRound++;
         console.log(`[LOG] Начинается раунд ${this.state.currentRound}`);
-        
+
         // Сбрасываем счет и взятки для нового раунда
         this.state.teams.team1.score = 0;
         this.state.teams.team1.tricks = 0;
         this.state.teams.team2.score = 0;
         this.state.teams.team2.tricks = 0;
-        
+
         // Создаем новую колоду и раздаем карты
         this.state.deck = this.createDeck();
         this.dealCards();
-        
+
         // Проверяем, нужна ли пересдача
         let needReshuffle = false;
         for (const player of this.state.players) {
@@ -611,7 +625,7 @@ export class BelkaGame {
                 break;
             }
         }
-        
+
         if (needReshuffle) {
             console.log(`[LOG] Выполняем пересдачу карт`);
             // Пересдаем карты
@@ -619,10 +633,10 @@ export class BelkaGame {
             this.shuffleDeck(this.state.deck);
             this.dealCards();
         }
-        
+
         // Сначала сбрасываем держателя валета крести
         this.state.clubJackHolder = null;
-        
+
         // Находим игрока с валетом крести
         for (const player of this.state.players) {
             if (player.cards.some(card => card.rank === 'J' && card.suit === '♣')) {
@@ -631,15 +645,15 @@ export class BelkaGame {
                 break;
             }
         }
-        
+
         // После первого раунда показываем, чей козырь
         if (this.state.currentRound > 1) {
             this.state.hideClubJackHolder = false;
         }
-        
+
         // Определяем козырь для нового раунда
         this.determineNewTrump();
-        
+
         console.log(`[LOG] Раунд ${this.state.currentRound} инициализирован. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
     }
 
@@ -652,17 +666,17 @@ export class BelkaGame {
                 break;
             }
         }
-        
+
         if (clubJackHolder) {
             // Сохраняем текущего держателя валета крести
             this.state.clubJackHolder = clubJackHolder;
-            
+
             // В первом раунде козырь всегда крести
             if (this.state.currentRound === 1) {
                 this.state.trump = '♣';
                 return;
             }
-            
+
             // Определяем масть козыря по карте игрока
             if (this.state.playerSuitMap && this.state.playerSuitMap.has(clubJackHolder.id)) {
                 this.state.trump = this.state.playerSuitMap.get(clubJackHolder.id)!;
@@ -681,27 +695,27 @@ export class BelkaGame {
         const team1Won = this.state.teams.team1.score > this.state.teams.team2.score;
         const team2Won = this.state.teams.team2.score > this.state.teams.team1.score;
         const isTie = this.state.teams.team1.score === this.state.teams.team2.score;
-        
+
         // Инициализируем переменные для глаз
         let team1Eyes = 0;
         let team2Eyes = 0;
-        
+
         // Проверка на "голую" (все взятки + 120 очков)
         if (this.state.teams.team1.score === 120 && this.state.teams.team2.tricks === 0) {
             this.endGame(true, 1);
             return "🏆 Команда 1 выиграла 'голую'! Игра окончена!";
         }
-        
+
         if (this.state.teams.team2.score === 120 && this.state.teams.team1.tricks === 0) {
             this.endGame(true, 2);
             return "🏆 Команда 2 выиграла 'голую'! Игра окончена!";
         }
-        
+
         // Проверка на "яйца" (по 60 очков)
         if (this.state.teams.team1.score === 60 && this.state.teams.team2.score === 60) {
             return "🥚 Яйца! Обе команды набрали по 60 очков. Раунд будет переигран, победившая команда получит 4 очка.";
         }
-        
+
         // Проверка, является ли этот раунд переигровкой после "яиц"
         if (this.state.eggsTiebreaker) {
             if (team1Won) {
@@ -732,7 +746,7 @@ export class BelkaGame {
                     this.state.teams.team1.eyes += 1;
                     team1Eyes = 1;
                 }
-                
+
                 if (this.state.teams.team2.score >= 91) {
                     this.state.teams.team2.eyes += 2;
                     team2Eyes = 2;
@@ -742,27 +756,27 @@ export class BelkaGame {
                 }
             }
         }
-        
+
         // Проверяем, у кого валет крести и добавляем дополнительный глаз (только не в первом раунде)
         if (this.state.clubJackHolder && this.state.currentRound > 1) {
             const isClubJackInTeam1 = this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id);
-            
+
             // Если валет крести у команды 2, а выиграла команда 1
             if (!isClubJackInTeam1 && team1Won) {
                 this.state.teams.team1.eyes += 1;
                 team1Eyes += 1;
             }
-            
+
             // Если валет крести у команды 1, а выиграла команда 2
             if (isClubJackInTeam1 && team2Won) {
                 this.state.teams.team2.eyes += 1;
                 team2Eyes += 1;
             }
         }
-        
+
         // Формируем сообщение с результатами раунда
         let results = `📊 Результаты раунда ${this.state.currentRound}:\n\n`;
-        
+
         // Добавляем информацию о победителе раунда
         if (team1Won) {
             results += `🏆 Победитель раунда: Команда 1\n\n`;
@@ -771,17 +785,17 @@ export class BelkaGame {
         } else if (isTie) {
             results += `🥚 Ничья (Яйца)! Обе команды набрали по ${this.state.teams.team1.score} очков.\n\n`;
         }
-        
+
         results += `👥 Команда 1:\n`;
         // Список игроков команды 1
         this.state.teams.team1.players.forEach(player => {
             let playerName = player.username;
-            
+
             // Показываем значок козыря для держателя валета крести
             if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
                 playerName += " 🃏";
             }
-            
+
             // Добавляем информацию о мастях игроков только после первого раунда
             if (this.state.currentRound > 1) {
                 if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
@@ -790,38 +804,38 @@ export class BelkaGame {
                     playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
                 }
             }
-            
+
             results += `- ${playerName}\n`;
         });
-        
+
         results += `💯 Очки в раунде: ${this.state.teams.team1.score}\n`;
         results += `👑 Взятки: ${this.state.teams.team1.tricks}\n`;
-        
+
         // Добавляем информацию о глазах
         if (this.state.currentRound === 1 && team1Won) {
             results += `👁️ Глаза в этом раунде: +${team1Eyes} (первый раунд)\n`;
         } else if (this.state.eggsTiebreaker && team1Won) {
             results += `👁️ Глаза в этом раунде: +${team1Eyes} (переигровка после "яиц")\n`;
-        } else if (this.state.currentRound > 1 && this.state.clubJackHolder && 
-            !this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) && 
+        } else if (this.state.currentRound > 1 && this.state.clubJackHolder &&
+            !this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) &&
             team1Won) {
             results += `👁️ Глаза в этом раунде: +${team1Eyes} (включая +1 за валета крести у соперников)\n`;
         } else {
             results += `👁️ Глаза в этом раунде: +${team1Eyes}\n`;
         }
-        
+
         results += `👁️ Всего глаз: ${this.state.teams.team1.eyes}\n\n`;
-        
+
         results += `👥 Команда 2:\n`;
         // Список игроков команды 2
         this.state.teams.team2.players.forEach(player => {
             let playerName = player.username;
-            
+
             // Показываем значок козыря для держателя валета крести
             if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
                 playerName += " 🃏";
             }
-            
+
             // Добавляем информацию о мастях игроков только после первого раунда
             if (this.state.currentRound > 1) {
                 if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
@@ -830,31 +844,31 @@ export class BelkaGame {
                     playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
                 }
             }
-            
+
             results += `- ${playerName}\n`;
         });
-        
+
         results += `💯 Очки в раунде: ${this.state.teams.team2.score}\n`;
         results += `👑 Взятки: ${this.state.teams.team2.tricks}\n`;
-        
+
         // Добавляем информацию о глазах
         if (this.state.currentRound === 1 && team2Won) {
             results += `👁️ Глаза в этом раунде: +${team2Eyes} (первый раунд)\n`;
         } else if (this.state.eggsTiebreaker && team2Won) {
             results += `👁️ Глаза в этом раунде: +${team2Eyes} (переигровка после "яиц")\n`;
-        } else if (this.state.currentRound > 1 && this.state.clubJackHolder && 
-            this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) && 
+        } else if (this.state.currentRound > 1 && this.state.clubJackHolder &&
+            this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) &&
             team2Won) {
             results += `👁️ Глаза в этом раунде: +${team2Eyes} (включая +1 за валета крести у соперников)\n`;
         } else {
             results += `👁️ Глаза в этом раунде: +${team2Eyes}\n`;
         }
-        
+
         results += `👁️ Всего глаз: ${this.state.teams.team2.eyes}\n`;
-        
+
         // Определяем необходимое количество глаз для победы в зависимости от режима игры
         const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
-        
+
         // Проверка на победу по глазам
         if (this.state.teams.team1.eyes >= eyesToWin) {
             this.endGame(false, 1);
@@ -866,37 +880,45 @@ export class BelkaGame {
             // Если никто не выиграл, начинаем новый раунд
             this.startNewRound();
             results += `\n🃏 Начинается раунд ${this.state.currentRound}!\n\n`;
-            
+
             // Добавляем информацию о новом раунде из getGameSummary()
             const newRoundSummary = this.getGameSummary();
             results += newRoundSummary;
         }
-        
+
         return results;
     }
 
     private endGame(isGolden: boolean, winningTeam: 1 | 2): void {
         this.state.isActive = false;
-        
+
         // Обновляем статистику для всех игроков
         const winners = winningTeam === 1 ? this.state.teams.team1.players : this.state.teams.team2.players;
         const losers = winningTeam === 1 ? this.state.teams.team2.players : this.state.teams.team1.players;
-        
+
         winners.forEach(player => {
             this.statsService.updatePlayerStats(
                 player.id,
+                player.username,
                 true,
                 winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
-                winningTeam === 1 ? this.state.teams.team1.tricks : this.state.teams.team2.tricks
+                player.tricks || 0,
+                false,
+                isGolden,
+                this.state.chatId
             );
         });
-        
+
         losers.forEach(player => {
             this.statsService.updatePlayerStats(
                 player.id,
+                player.username,
                 false,
                 winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
-                winningTeam === 1 ? this.state.teams.team2.tricks : this.state.teams.team1.tricks
+                player.tricks || 0,
+                false,
+                false,
+                this.state.chatId
             );
         });
 
@@ -919,24 +941,24 @@ export class BelkaGame {
         let summary = `🎮 Режим игры: ${gameModeName} (до ${eyesToWin} глаз)\n`;
         summary += `🃏 Раунд ${this.state.currentRound}\n`;
         summary += `♠️♣️♦️♥️ Козырь: ${this.state.trump}`;
-        
+
         // Показываем информацию о держателе валета крести только после первого раунда
         if (this.state.clubJackHolder && !this.state.hideClubJackHolder) {
             summary += ` (определен игроком ${this.state.clubJackHolder.username})`;
         }
-        
+
         summary += `\n\n`;
 
         // Информация о командах
         summary += '👥 Команда 1:\n';
         this.state.teams.team1.players.forEach(player => {
             let playerName = player.username;
-            
+
             // Показываем значок козыря для держателя валета крести
             if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
                 playerName += " 🃏";
             }
-            
+
             // Добавляем информацию о мастях игроков только после первого раунда
             if (this.state.currentRound > 1) {
                 if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
@@ -945,22 +967,22 @@ export class BelkaGame {
                     playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
                 }
             }
-            
+
             summary += `- ${playerName}\n`;
         });
-        
+
         // Добавляем отступ между списком игроков и информацией о глазах
         summary += `\n👁️ Глаза: ${this.state.teams.team1.eyes}/${eyesToWin}\n\n`;
 
         summary += '👥 Команда 2:\n';
         this.state.teams.team2.players.forEach(player => {
             let playerName = player.username;
-            
+
             // Показываем значок козыря для держателя валета крести
             if (this.state.clubJackHolder && !this.state.hideClubJackHolder && player.id === this.state.clubJackHolder.id) {
                 playerName += " 🃏";
             }
-            
+
             // Добавляем информацию о мастях игроков только после первого раунда
             if (this.state.currentRound > 1) {
                 if (this.state.initialClubJackHolder && player.id === this.state.initialClubJackHolder.id) {
@@ -969,13 +991,13 @@ export class BelkaGame {
                     playerName += ` (${this.state.playerSuitMap.get(player.id)})`;
                 }
             }
-            
+
             summary += `- ${playerName}\n`;
         });
-        
+
         // Добавляем отступ между списком игроков и информацией о глазах
         summary += `\n👁️ Глаза: ${this.state.teams.team2.eyes}/${eyesToWin}\n`;
-        
+
         // Добавляем информацию о том, чей первый ход
         const currentPlayer = this.state.players[this.state.currentPlayerIndex];
         if (currentPlayer) {
@@ -1066,21 +1088,21 @@ export class BelkaGame {
 
     private setupPlayerSuitMap(): void {
         if (!this.state.initialClubJackHolder) return;
-        
+
         // Определяем индекс игрока с валетом крести
         const initialHolderIndex = this.state.players.findIndex(
             p => p.id === this.state.initialClubJackHolder!.id
         );
-        
+
         if (initialHolderIndex === -1) return;
-        
+
         // Устанавливаем масти для каждого игрока
         // Порядок мастей: ♣ (крести), ♥ (черви), ♠ (пики), ♦ (буби)
         const suits: CardSuit[] = ['♣', '♥', '♠', '♦'];
-        
+
         // Очищаем предыдущую карту мастей
         this.state.playerSuitMap.clear();
-        
+
         // Игрок с валетом крести всегда отвечает за крести
         for (let i = 0; i < this.state.players.length; i++) {
             const player = this.state.players[i];
@@ -1089,7 +1111,7 @@ export class BelkaGame {
             // Присваиваем масть каждому игроку
             this.state.playerSuitMap.set(player.id, suits[suitIndex]);
         }
-        
+
         // Выводим отладочную информацию
         console.log(`[LOG] Установлено соответствие игроков и мастей:`);
         this.state.players.forEach(player => {
