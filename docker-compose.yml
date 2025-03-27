@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  belka-game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: belka-game
+    restart: unless-stopped
+    ports:
+      - "80:80"  # Web application port
+      - "3000:3000"  # Bot API port
+    environment:
+      - NODE_ENV=production
+      - BOT_TOKEN=${BOT_TOKEN}
+    volumes:
+      - ./data:/app/data  # For persistent bot data
+      - ./logs:/app/logs  # For logs
+      - ./player_stats.json:/app/player_stats.json  # For player statistics
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
