@@ -227,7 +227,12 @@ export class BelkaGame {
         }
     }
 
-    public makeMove(playerId: number, cardIndex: number): MoveResult {
+    public async makeMove(playerId: number, cardIndex: number): Promise<MoveResult> {
+        // Проверка, активна ли игра
+        if (!this.state.isActive) {
+            return { success: false, message: "Игра неактивна" };
+        }
+
         const playerIndex = this.state.players.findIndex(p => p.id === playerId);
 
         if (playerIndex === -1) {
@@ -235,10 +240,6 @@ export class BelkaGame {
         }
 
         const player = this.state.players[playerIndex];
-
-        if (!this.state.isActive) {
-            return { success: false, message: 'Игра еще не началась или уже закончена' };
-        }
 
         if (playerIndex !== this.state.currentPlayerIndex) {
             return {
@@ -300,7 +301,7 @@ export class BelkaGame {
         // Удаляем карту из руки игрока
         player.cards.splice(cardIndex, 1);
 
-        // Добавляем карту на стол с информацией о том, кто её положил
+        // Добавляем карту на стол
         this.state.tableCards.push({ card, playerId });
 
         // Если все игроки сделали ходы, разрешаем раунд
@@ -319,7 +320,7 @@ export class BelkaGame {
             if (allCardsPlayed) {
                 // Если все карты сыграны, подводим итоги раунда
                 console.log(`[LOG] Все карты сыграны, формируем результаты раунда`);
-                const roundResults = this.finishRound();
+                const roundResults = await this.finishRound();
                 console.log(`[LOG] Результаты раунда сформированы, длина: ${roundResults.length}`);
 
                 return {
@@ -690,7 +691,7 @@ export class BelkaGame {
         }
     }
 
-    private finishRound(): string {
+    private async finishRound(): Promise<string> {
         // Определяем, кто выиграл раунд
         const team1Won = this.state.teams.team1.score > this.state.teams.team2.score;
         const team2Won = this.state.teams.team2.score > this.state.teams.team1.score;
@@ -702,12 +703,12 @@ export class BelkaGame {
 
         // Проверка на "голую" (все взятки + 120 очков)
         if (this.state.teams.team1.score === 120 && this.state.teams.team2.tricks === 0) {
-            this.endGame(true, 1);
+            await this.endGame(true, 1);
             return "🏆 Команда 1 выиграла 'голую'! Игра окончена!";
         }
 
         if (this.state.teams.team2.score === 120 && this.state.teams.team1.tricks === 0) {
-            this.endGame(true, 2);
+            await this.endGame(true, 2);
             return "🏆 Команда 2 выиграла 'голую'! Игра окончена!";
         }
 
@@ -871,10 +872,10 @@ export class BelkaGame {
 
         // Проверка на победу по глазам
         if (this.state.teams.team1.eyes >= eyesToWin) {
-            this.endGame(false, 1);
+            await this.endGame(false, 1);
             results += `\n🏆🏆🏆 Команда 1 набрала ${this.state.teams.team1.eyes} глаз (требуется ${eyesToWin})! Игра окончена!`;
         } else if (this.state.teams.team2.eyes >= eyesToWin) {
-            this.endGame(false, 2);
+            await this.endGame(false, 2);
             results += `\n🏆🏆🏆 Команда 2 набрала ${this.state.teams.team2.eyes} глаз (требуется ${eyesToWin})! Игра окончена!`;
         } else {
             // Если никто не выиграл, начинаем новый раунд
@@ -889,41 +890,47 @@ export class BelkaGame {
         return results;
     }
 
-    private endGame(isGolden: boolean, winningTeam: 1 | 2): void {
+    private async endGame(isGolden: boolean, winningTeam: 1 | 2): Promise<void> {
         this.state.isActive = false;
 
         // Обновляем статистику для всех игроков
         const winners = winningTeam === 1 ? this.state.teams.team1.players : this.state.teams.team2.players;
         const losers = winningTeam === 1 ? this.state.teams.team2.players : this.state.teams.team1.players;
 
-        winners.forEach(player => {
-            this.statsService.updatePlayerStats(
-                player.id,
-                player.username,
-                true,
-                winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
-                player.tricks || 0,
-                false,
-                isGolden,
-                this.state.chatId
-            );
-        });
+        try {
+            // Обновляем статистику для победителей
+            for (const player of winners) {
+                await this.statsService.updatePlayerStats(
+                    player.id,
+                    player.username,
+                    true,
+                    winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
+                    player.tricks || 0,
+                    false,
+                    isGolden,
+                    this.state.chatId
+                );
+            }
 
-        losers.forEach(player => {
-            this.statsService.updatePlayerStats(
-                player.id,
-                player.username,
-                false,
-                winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
-                player.tricks || 0,
-                false,
-                false,
-                this.state.chatId
-            );
-        });
+            // Обновляем статистику для проигравших
+            for (const player of losers) {
+                await this.statsService.updatePlayerStats(
+                    player.id,
+                    player.username,
+                    false,
+                    winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
+                    player.tricks || 0,
+                    false,
+                    false,
+                    this.state.chatId
+                );
+            }
 
-        if (isGolden) {
-            this.state.clubJackHolder = winners[0];
+            if (isGolden) {
+                this.state.clubJackHolder = winners[0];
+            }
+        } catch (error) {
+            console.error('Ошибка при обновлении статистики игроков:', error);
         }
     }
 
