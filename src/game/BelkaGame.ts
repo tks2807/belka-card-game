@@ -34,7 +34,7 @@ interface ExtendedGameState {
     playerSuitMap: Map<number, CardSuit>; // Соответствие игроков и мастей для козырей
     hideClubJackHolder: boolean;
     eggsTiebreaker: boolean;
-    gameMode: 'belka' | 'walka'; // Режим игры: "белка" до 12 глаз или "валка" до 6 глаз
+    gameMode: 'belka' | 'walka'; // Режим игры: "белка" до 12 глаз или "Шалқа" до 6 глаз
 }
 
 export class BelkaGame {
@@ -936,7 +936,7 @@ export class BelkaGame {
     public getGameSummary(): string {
         // Определяем необходимое количество глаз для победы в зависимости от режима игры
         const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
-        const gameModeName = this.state.gameMode === 'belka' ? 'Белка' : 'Валка';
+        const gameModeName = this.state.gameMode === 'belka' ? 'Белка' : 'Шалқа';
 
         let summary = `🎮 Режим игры: ${gameModeName} (до ${eyesToWin} глаз)\n`;
         summary += `🃏 Раунд ${this.state.currentRound}\n`;
