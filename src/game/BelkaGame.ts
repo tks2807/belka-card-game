@@ -156,6 +156,7 @@ export class BelkaGame {
 
         this.state.isActive = true;
         this.state.currentRound = 1;
+        // Начальный ход всегда у первого игрока (индекс 0)
         this.state.currentPlayerIndex = 0;
         this.state.tableCards = [];
         this.state.eggsTiebreaker = false;
@@ -166,6 +167,7 @@ export class BelkaGame {
         this.state.gameMode = mode;
 
         console.log(`[LOG] Запуск игры в режиме: ${mode}`);
+        console.log(`[LOG] Первый ход в первом раунде передан игроку ${this.state.players[0].username}`);
 
         // Создаем и перемешиваем колоду
         this.state.deck = this.createDeck();
@@ -379,9 +381,10 @@ export class BelkaGame {
             this.state.teams.team2.tricks += 1;
         }
 
-        // Устанавливаем следующего игрока (победитель ходит первым)
+        // Устанавливаем следующего игрока (победитель ходит первым в следующей взятке)
         this.state.currentPlayerIndex = this.state.players.findIndex(p => p.id === winningPlayerId);
-
+        console.log(`[LOG] Взятку выиграл игрок ${winningPlayer.username}, он ходит первым в следующей взятке`);
+      
         // Очищаем стол
         this.state.tableCards = [];
     }
@@ -551,7 +554,13 @@ export class BelkaGame {
             });
             // Логика для "яиц" - переигрываем раунд
             this.state.eggsTiebreaker = true; // Устанавливаем флаг переигровки
-            this.startNewRound(); // Переигрываем раунд
+            
+            // При переигровке "яиц" мы уменьшаем номер раунда на 1,
+            // чтобы startNewRound() увеличил его обратно и сохранил тот же номер раунда,
+            // но при этом первый ход должен перейти к следующему игроку по порядку
+            this.state.currentRound--;
+            
+            this.startNewRound(); // Переигрываем раунд 
             return;
         }
 
@@ -603,6 +612,7 @@ export class BelkaGame {
     }
 
     private startNewRound(): void {
+        // Увеличиваем номер раунда
         this.state.currentRound++;
         console.log(`[LOG] Начинается раунд ${this.state.currentRound}`);
 
@@ -611,6 +621,11 @@ export class BelkaGame {
         this.state.teams.team1.tricks = 0;
         this.state.teams.team2.score = 0;
         this.state.teams.team2.tricks = 0;
+
+        // Передаем первый ход следующему игроку по порядку
+        // Раунд 1 - игрок 0, Раунд 2 - игрок 1, Раунд 3 - игрок 2, Раунд 4 - игрок 3, Раунд 5 - снова игрок 0 и т.д.
+        this.state.currentPlayerIndex = (this.state.currentRound - 1) % this.state.players.length;
+        console.log(`[LOG] Первый ход в раунде ${this.state.currentRound} передан игроку ${this.state.players[this.state.currentPlayerIndex].username}`);
 
         // Создаем новую колоду и раздаем карты
         this.state.deck = this.createDeck();
