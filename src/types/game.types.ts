@@ -55,10 +55,13 @@ export interface GameState {
 }
 
 export interface PlayerStats {
+    username: string;
     gamesPlayed: number;
     gamesWon: number;
     totalScore: number;
     totalTricks: number;
+    eggsCount: number;
+    golayaCount: number;
 }
 
 export interface MoveResult {
