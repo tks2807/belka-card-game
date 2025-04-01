@@ -1,27 +1,95 @@
-# MyAngularApp
+# Belka Card Game Bot
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 15.2.11.
+Телеграм-бот для игры в карточную игру "Белка".
 
-## Development server
+## Установка
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+1. Клонируйте репозиторий
+```bash
+git clone <repository-url>
+cd belka-card-game
+```
 
-## Code scaffolding
+2. Установите зависимости
+```bash
+npm install
+```
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+3. Создайте файл .env и добавьте в него токен бота
+```
+BOT_TOKEN=your_bot_token
+```
 
-## Build
+## База данных PostgreSQL
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+### Настройка PostgreSQL
 
-## Running unit tests
+1. Установите PostgreSQL на вашу систему (если еще не установлен)
+   - Скачайте установщик с [официального сайта](https://www.postgresql.org/download/windows/)
+   - Запустите установщик и следуйте инструкциям
+   - Запомните пароль для пользователя postgres
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+2. Создайте базу данных для бота:
+   - Запустите pgAdmin из меню Пуск
+   - Подключитесь к серверу PostgreSQL (введите пароль пользователя postgres)
+   - Щелкните правой кнопкой по разделу "Databases"
+   - Выберите "Create" > "Database..."
+   - Введите имя "belka_game" и нажмите "Save"
 
-## Running end-to-end tests
+3. Настройте переменные окружения в файле .env:
+```
+DB_USER=postgres
+DB_HOST=127.0.0.1
+DB_NAME=belka_game
+DB_PASSWORD=ваш_пароль_от_postgres
+DB_PORT=5432
+```
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+4. Скомпилируйте проект:
+```bash
+npx tsc
+```
 
-## Further help
+5. Инициализируйте схему базы данных:
+```bash
+node dist/db/setupDatabase.js
+```
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+### Проблемы с подключением
+
+Если вы получаете ошибку "ECONNREFUSED" при подключении:
+1. Убедитесь, что PostgreSQL запущен (проверьте службы Windows)
+2. Проверьте, что IP-адрес и порт указаны правильно (127.0.0.1:5432)
+3. Убедитесь, что пароль в .env файле верный
+4. Проверьте, что база данных "belka_game" создана
+
+## Запуск
+
+```bash
+npm start
+```
+
+## Команды бота
+
+- /start - Начать работу с ботом
+- /help - Показать справку
+- /join - Присоединиться к игре
+- /startbelka - Начать игру (Белка - до 12 глаз)
+- /startwalka - Начать игру (Шалқа - до 6 глаз)
+- /state - Показать текущее состояние игры
+- /leaderboardall - Показать глобальную таблицу лидеров
+- /leaderboardchat - Показать таблицу лидеров для текущего чата
+- /endgame - Проголосовать за завершение игры
+- /clearbot - Сбросить игру
+- /inline_setup - Инструкция по настройке инлайн-режима
+
+## Правила игры
+
+Белка - это казахская карточная игра, где игроки соревнуются в командах:
+
+- Игра для 4-х игроков (2 команды по 2 игрока)
+- Цель: набрать 12 глаз (режим "Белка") или 6 глаз (режим "Шалқа")
+- Валеты всегда козыри, старшинство: крести > пики > черви > буби
+- "Голая" - это когда команда берет все взятки (мгновенная победа)
+
+Полные правила доступны по команде /help.
