@@ -1,11 +1,23 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 import * as dotenv from 'dotenv';
+import { message } from 'telegraf/filters';
 import { BelkaGame } from './game/BelkaGame';
 import { Player, CardSuit, Card, TableCard, GameState, CardRank } from './types/game.types';
 import { StatsService } from './services/StatsService';
+import setupDatabase from './db/setupDatabase';
 
 // Загружаем переменные окружения
 dotenv.config();
+
+// Инициализируем базу данных перед запуском бота
+setupDatabase()
+  .then(() => {
+    console.log('Database initialized successfully');
+  })
+  .catch((err) => {
+    console.error('Error initializing database:', err);
+    process.exit(1);
+  });
 
 // Инициализируем бота
 const bot = new Telegraf(process.env['BOT_TOKEN'] || '');
@@ -483,48 +495,54 @@ bot.command('state', async (ctx) => {
 const statsService = new StatsService();
 
 bot.command('leaderboardall', async (ctx) => {
-    try {
-      const leaderboardEntries = statsService.getLeaderboardAll();
-      if (leaderboardEntries.length === 0) {
-        await ctx.reply('Лидерборд пока пуст.');
-        return;
-      }
-      let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
-      leaderboardEntries.forEach(([playerId, stats], index) => {
-        message += `${index + 1}. ${stats.username}\n` +
-          `   Игры: ${stats.gamesPlayed}, Победы: ${stats.gamesWon}\n` +
-          `   Очки: ${stats.totalScore}, Взяток: ${stats.totalTricks}\n` +
-          `   Голые победы: ${stats.golayaCount}, Яйца: ${stats.eggsCount}\n\n`;
-      });
-      await ctx.reply(message);
-    } catch (error) {
-      console.error('Ошибка при получении глобального лидерборда:', error);
-      await ctx.reply('Произошла ошибка при получении глобального лидерборда.');
+  try {
+    const leaderboardEntries = await statsService.getLeaderboardAll();
+    if (leaderboardEntries.length === 0) {
+      await ctx.reply('Лидерборд пока пуст.');
+      return;
     }
-  });
+    let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
+    leaderboardEntries.forEach(([playerId, stats], index) => {
+      message += `${index + 1}. ${stats.username}\n` +
+        `🃏 Игры: ${stats.gamesPlayed}\n` +
+        `🏆 Победы: ${stats.gamesWon}\n` +
+        `🔢 Очки: ${stats.totalScore}\n` +
+        `✂️ Взяток: ${stats.totalTricks}\n` +
+        `🎖 Голые победы: ${stats.golayaCount}\n` +
+        `🥚 Яйца: ${stats.eggsCount}\n\n`;
+    });
+    await ctx.reply(message);
+  } catch (error) {
+    console.error('Ошибка при получении глобального лидерборда:', error);
+    await ctx.reply('Произошла ошибка при получении глобального лидерборда.');
+  }
+});
 
-  bot.command('leaderboardchat', async (ctx) => {
-    try {
-      const chatId = ctx.chat?.id;
-      if (!chatId) return;
-      const leaderboardEntries = statsService.getLeaderboardChat(chatId);
-      if (leaderboardEntries.length === 0) {
-        await ctx.reply('Лидерборд для этого чата пока пуст.');
-        return;
-      }
-      let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
-      leaderboardEntries.forEach(([playerId, stats], index) => {
-        message += `${index + 1}. ${stats.username}\n` +
-          `   Игры: ${stats.gamesPlayed}, Победы: ${stats.gamesWon}\n` +
-          `   Очки: ${stats.totalScore}, Взяток: ${stats.totalTricks}\n` +
-          `   Голая победа: ${stats.golayaCount}, Яйца: ${stats.eggsCount}\n\n`;
-      });
-      await ctx.reply(message);
-    } catch (error) {
-      console.error('Ошибка при получении лидерборда для чата:', error);
-      await ctx.reply('Произошла ошибка при получении лидерборда для этого чата.');
+bot.command('leaderboardchat', async (ctx) => {
+  try {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const leaderboardEntries = await statsService.getLeaderboardChat(chatId);
+    if (leaderboardEntries.length === 0) {
+      await ctx.reply('Лидерборд для этого чата пока пуст.');
+      return;
     }
-  });
+    let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
+    leaderboardEntries.forEach(([playerId, stats], index) => {
+      message += `${index + 1}. ${stats.username}\n` +
+        `🃏 Игры: ${stats.gamesPlayed}\n` +
+        `🏆 Победы: ${stats.gamesWon}\n` +
+        `🔢 Очки: ${stats.totalScore}\n` +
+        `✂️ Взяток: ${stats.totalTricks}\n` +
+        `🎖 Голая победа: ${stats.golayaCount}\n` +
+        `🥚 Яйца: ${stats.eggsCount}\n\n`;
+    });
+    await ctx.reply(message);
+  } catch (error) {
+    console.error('Ошибка при получении лидерборда для чата:', error);
+    await ctx.reply('Произошла ошибка при получении лидерборда для этого чата.');
+  }
+});
 
 // Обработчик команды /endgame
 bot.command('endgame', async (ctx) => {
@@ -964,8 +982,8 @@ bot.on(['sticker', 'text'], async (ctx) => {
             // Логируем информацию о ходе
             console.log(`[LOG] Делаем ход игроком ${currentPlayer.username} картой ${cardInfo.suit}${cardInfo.rank} (индекс: ${cardIndex})`);
             
-            // Делаем ход
-            const result = game.makeMove(currentPlayer.id, cardIndex);
+            // Делаем ход и получаем результат
+            const result = await game.makeMove(currentPlayer.id, cardIndex);
             
             console.log(`[LOG] Результат хода:`, JSON.stringify(result, null, 2));
             

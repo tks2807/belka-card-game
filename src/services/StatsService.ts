@@ -1,61 +1,12 @@
 import { PlayerStats } from '../types/game.types';
-import * as fs from 'fs';
+import pool from '../db';
 
-interface StatsFileStructure {
-    global: { [playerId: string]: PlayerStats };
-    chats: { [chatId: string]: { [playerId: string]: PlayerStats } };
-}
 export class StatsService {
-    private statsFile = 'player_stats.json';
-    private globalStats: Map<number, PlayerStats>;
-    private chatStats: Map<number, Map<number, PlayerStats>>;
-
     constructor() {
-        this.globalStats = new Map();
-        this.chatStats = new Map();
-        this.loadStats();
+        // No need to load stats from file anymore
     }
 
-    private loadStats(): void {
-        try {
-            if (fs.existsSync(this.statsFile)) {
-                const data = JSON.parse(fs.readFileSync(this.statsFile, 'utf-8'));
-                this.globalStats = new Map(
-                    Object.entries(data.global).map(([key, value]) => [Number(key), value as PlayerStats])
-                );
-                this.chatStats = new Map(
-                    Object.entries(data.chats).map(([chatId, statsObj]) => {
-                        const mapStats = new Map(
-                            Object.entries(statsObj as Record<string, PlayerStats>).map(([playerId, value]) => [Number(playerId), value as PlayerStats])
-                        );
-                        return [Number(chatId), mapStats];
-                    })
-                );
-            }
-        } catch (error) {
-            console.error('Ошибка при загрузке статистики:', error);
-        }
-    }
-
-    private saveStats(): void {
-        try {
-            const globalObj: { [playerId: string]: PlayerStats } = Object.fromEntries(
-                Array.from(this.globalStats.entries()).map(([k, v]) => [k.toString(), v])
-            );
-            const chatsObj: { [chatId: string]: { [playerId: string]: PlayerStats } } = {};
-            this.chatStats.forEach((mapStats, chatId) => {
-                chatsObj[chatId.toString()] = Object.fromEntries(
-                    Array.from(mapStats.entries()).map(([k, v]) => [k.toString(), v])
-                );
-            });
-            const data: StatsFileStructure = { global: globalObj, chats: chatsObj };
-            fs.writeFileSync(this.statsFile, JSON.stringify(data, null, 2));
-        } catch (error) {
-            console.error('Ошибка при сохранении статистики:', error);
-        }
-    }
-
-    public updatePlayerStats(
+    public async updatePlayerStats(
         playerId: number,
         username: string,
         won: boolean,
@@ -64,71 +15,209 @@ export class StatsService {
         eggs: boolean,
         golaya: boolean,
         chatId: number
-    ): void {
-        // Обновляем глобальную статистику
-        const global = this.globalStats.get(playerId) || {
-            username,
-            gamesPlayed: 0,
-            gamesWon: 0,
-            totalScore: 0,
-            totalTricks: 0,
-            eggsCount: 0,
-            golayaCount: 0
-        };
-        global.gamesPlayed++;
-        if (won) global.gamesWon++;
-        global.totalScore += score;
-        global.totalTricks += tricks;
-        if (eggs) global.eggsCount++;
-        if (golaya) global.golayaCount++;
-        this.globalStats.set(playerId, global);
+    ): Promise<void> {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
 
-        // Обновляем статистику для конкретного чата
-        let chatMap = this.chatStats.get(chatId);
-        if (!chatMap) {
-            chatMap = new Map<number, PlayerStats>();
-            this.chatStats.set(chatId, chatMap);
+            // Ensure player exists
+            await client.query(
+                'INSERT INTO players (player_id, username) VALUES ($1, $2) ON CONFLICT (player_id) DO UPDATE SET username = $2',
+                [playerId, username]
+            );
+
+            // Update global stats
+            await client.query(`
+                INSERT INTO global_stats 
+                (player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
+                VALUES ($1, 1, $2, $3, $4, $5, $6)
+                ON CONFLICT (player_id) DO UPDATE SET
+                games_played = global_stats.games_played + 1,
+                games_won = global_stats.games_won + $2,
+                total_score = global_stats.total_score + $3,
+                total_tricks = global_stats.total_tricks + $4,
+                eggs_count = global_stats.eggs_count + $5,
+                golaya_count = global_stats.golaya_count + $6
+            `, [
+                playerId,
+                won ? 1 : 0,
+                score,
+                tricks,
+                eggs ? 1 : 0,
+                golaya ? 1 : 0
+            ]);
+
+            // Update chat stats
+            await client.query(`
+                INSERT INTO chat_stats 
+                (chat_id, player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
+                VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
+                ON CONFLICT (chat_id, player_id) DO UPDATE SET
+                games_played = chat_stats.games_played + 1,
+                games_won = chat_stats.games_won + $3,
+                total_score = chat_stats.total_score + $4,
+                total_tricks = chat_stats.total_tricks + $5,
+                eggs_count = chat_stats.eggs_count + $6,
+                golaya_count = chat_stats.golaya_count + $7
+            `, [
+                chatId,
+                playerId,
+                won ? 1 : 0,
+                score,
+                tricks,
+                eggs ? 1 : 0,
+                golaya ? 1 : 0
+            ]);
+
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK');
+            console.error('Error updating player stats:', error);
+            throw error;
+        } finally {
+            client.release();
         }
-        const chatStat = chatMap.get(playerId) || {
-            username,
-            gamesPlayed: 0,
-            gamesWon: 0,
-            totalScore: 0,
-            totalTricks: 0,
-            eggsCount: 0,
-            golayaCount: 0
-        };
-        chatStat.gamesPlayed++;
-        if (won) chatStat.gamesWon++;
-        chatStat.totalScore += score;
-        chatStat.totalTricks += tricks;
-        if (eggs) chatStat.eggsCount++;
-        if (golaya) chatStat.golayaCount++;
-        chatMap.set(playerId, chatStat);
-
-        this.saveStats();
     }
 
-    public getLeaderboardAll(): [number, PlayerStats][] {
-        // Сортировка по количеству побед (например)
-        return Array.from(this.globalStats.entries()).sort((a, b) => b[1].gamesWon - a[1].gamesWon);
-      }
-    
-      public getLeaderboardChat(chatId: number): [number, PlayerStats][] {
-        const chatMap = this.chatStats.get(chatId);
-        if (!chatMap) return [];
-        return Array.from(chatMap.entries()).sort((a, b) => b[1].gamesWon - a[1].gamesWon);
-      }
+    public async getLeaderboardAll(): Promise<[number, PlayerStats][]> {
+        const client = await pool.connect();
+        try {
+            const result = await client.query(`
+                SELECT 
+                    p.player_id,
+                    p.username,
+                    g.games_played,
+                    g.games_won,
+                    g.total_score,
+                    g.total_tricks,
+                    g.eggs_count,
+                    g.golaya_count
+                FROM 
+                    global_stats g
+                JOIN 
+                    players p ON g.player_id = p.player_id
+                ORDER BY 
+                    g.games_won DESC, g.total_score DESC
+            `);
 
-    public getPlayerStats(playerId: number): PlayerStats {
-        return this.globalStats.get(playerId) || {
-            username: '',
-            gamesPlayed: 0,
-            gamesWon: 0,
-            totalScore: 0,
-            totalTricks: 0,
-            eggsCount: 0,
-            golayaCount: 0
-        };
+            return result.rows.map(row => [
+                row.player_id,
+                {
+                    username: row.username,
+                    gamesPlayed: row.games_played,
+                    gamesWon: row.games_won,
+                    totalScore: row.total_score,
+                    totalTricks: row.total_tricks,
+                    eggsCount: row.eggs_count,
+                    golayaCount: row.golaya_count
+                }
+            ]);
+        } catch (error) {
+            console.error('Error getting global leaderboard:', error);
+            return [];
+        } finally {
+            client.release();
+        }
+    }
+
+    public async getLeaderboardChat(chatId: number): Promise<[number, PlayerStats][]> {
+        const client = await pool.connect();
+        try {
+            const result = await client.query(`
+                SELECT 
+                    p.player_id,
+                    p.username,
+                    c.games_played,
+                    c.games_won,
+                    c.total_score,
+                    c.total_tricks,
+                    c.eggs_count,
+                    c.golaya_count
+                FROM 
+                    chat_stats c
+                JOIN 
+                    players p ON c.player_id = p.player_id
+                WHERE 
+                    c.chat_id = $1
+                ORDER BY 
+                    c.games_won DESC, c.total_score DESC
+            `, [chatId]);
+
+            return result.rows.map(row => [
+                row.player_id,
+                {
+                    username: row.username,
+                    gamesPlayed: row.games_played,
+                    gamesWon: row.games_won,
+                    totalScore: row.total_score,
+                    totalTricks: row.total_tricks,
+                    eggsCount: row.eggs_count,
+                    golayaCount: row.golaya_count
+                }
+            ]);
+        } catch (error) {
+            console.error('Error getting chat leaderboard:', error);
+            return [];
+        } finally {
+            client.release();
+        }
+    }
+
+    public async getPlayerStats(playerId: number): Promise<PlayerStats> {
+        const client = await pool.connect();
+        try {
+            const result = await client.query(`
+                SELECT 
+                    p.username,
+                    g.games_played,
+                    g.games_won,
+                    g.total_score,
+                    g.total_tricks,
+                    g.eggs_count,
+                    g.golaya_count
+                FROM 
+                    global_stats g
+                JOIN 
+                    players p ON g.player_id = p.player_id
+                WHERE 
+                    g.player_id = $1
+            `, [playerId]);
+
+            if (result.rows.length === 0) {
+                return {
+                    username: '',
+                    gamesPlayed: 0,
+                    gamesWon: 0,
+                    totalScore: 0,
+                    totalTricks: 0,
+                    eggsCount: 0,
+                    golayaCount: 0
+                };
+            }
+
+            const row = result.rows[0];
+            return {
+                username: row.username,
+                gamesPlayed: row.games_played,
+                gamesWon: row.games_won,
+                totalScore: row.total_score,
+                totalTricks: row.total_tricks,
+                eggsCount: row.eggs_count,
+                golayaCount: row.golaya_count
+            };
+        } catch (error) {
+            console.error('Error getting player stats:', error);
+            return {
+                username: '',
+                gamesPlayed: 0,
+                gamesWon: 0,
+                totalScore: 0,
+                totalTricks: 0,
+                eggsCount: 0,
+                golayaCount: 0
+            };
+        } finally {
+            client.release();
+        }
     }
 } 
