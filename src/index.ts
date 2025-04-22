@@ -43,9 +43,9 @@ if (useProxy && process.env['HTTPS_PROXY']) {
     fetch(`${process.env['TELEGRAM_API_URL'] || 'https://api.telegram.org'}/getMe`, {
       agent,
       timeout: 10000
-    }).then(res => {
+    }).then((res: any) => {
       console.log(`Proxy test status: ${res.status}`);
-    }).catch(err => {
+    }).catch((err: any) => {
       console.error('Proxy test error:', err.message);
     });
   } catch (err) {
@@ -357,11 +357,23 @@ bot.on('inline_query', async (ctx) => {
 
 // Обработчик команды /start
 bot.start((ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+
+    // Используем ChatManager для получения актуального ID чата
+    const actualChatId = chatManager.getActualChatId(chatId);
+    
     ctx.reply('Добро пожаловать в игру Белка! Используйте /help для получения списка команд.');
 });
 
 // Обработчик команды /help
 bot.help((ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+
+    // Используем ChatManager для получения актуального ID чата
+    const actualChatId = chatManager.getActualChatId(chatId);
+
     const helpText = `
 Белка - карточная игра для 4 игроков.
 
@@ -637,7 +649,20 @@ bot.command('state', async (ctx) => {
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = chatManager.getActualChatId(chatId);
 
-        const game = games.get(actualChatId);
+        // Проверяем, есть ли уже игра с актуальным ID чата
+        let game = games.get(actualChatId);
+        
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
+
         if (!game) {
             await ctx.reply('Игра не найдена. Начните новую игру с помощью /startbelka');
             return;
@@ -691,6 +716,11 @@ bot.command('leaderboardchat', async (ctx) => {
     
     // Используем ChatManager для получения актуального ID чата
     const actualChatId = chatManager.getActualChatId(chatId);
+    
+    // Проверяем, есть ли сопоставление для этого чата
+    if (chatId !== actualChatId) {
+      console.log(`[MIGRATION] Запрос таблицы лидеров для чата ${chatId}, используя актуальный ID ${actualChatId}`);
+    }
     
     const leaderboardEntries = await statsService.getLeaderboardChat(actualChatId);
     if (leaderboardEntries.length === 0) {
@@ -798,24 +828,31 @@ bot.command('clearbot', async (ctx) => {
             return;
         }
 
-        // Проверяем, существует ли игра для этого чата
-        const gameExists = games.has(actualChatId);
+        // Проверяем, существует ли игра для этого чата (с учетом обоих ID)
+        let gameExists = games.has(actualChatId);
+        let gameToClean = games.get(actualChatId);
         
-        if (gameExists) {
-            // Получаем игру перед удалением для очистки кэша карт
-            const game = games.get(actualChatId);
-            if (game) {
-                const gameState = game.getGameState();
-                // Очищаем карты всех игроков из хранилища
-                gameState.players.forEach(player => {
-                    playerCardsInPrivateChat.delete(player.id);
-                });
-                
-                console.log(`[LOG] Хранилище карт очищено для всех игроков из чата ${actualChatId}`);
+        // Проверяем старый ID, если не нашли с актуальным
+        if (!gameExists && chatId !== actualChatId) {
+            gameExists = games.has(chatId);
+            gameToClean = games.get(chatId);
+        }
+        
+        if (gameExists && gameToClean) {
+            const gameState = gameToClean.getGameState();
+            // Очищаем карты всех игроков из хранилища
+            gameState.players.forEach(player => {
+                playerCardsInPrivateChat.delete(player.id);
+            });
+            
+            console.log(`[LOG] Хранилище карт очищено для всех игроков из чата ${actualChatId}`);
+            
+            // Удаляем игру из хранилища (обоих ID)
+            games.delete(actualChatId);
+            if (chatId !== actualChatId) {
+                games.delete(chatId);
             }
             
-            // Удаляем игру из хранилища
-            games.delete(actualChatId);
             await ctx.reply('🧹 Игра успешно сброшена. Используйте /join, чтобы начать новую игру.');
         } else {
             await ctx.reply('Активной игры не найдено. Используйте /join, чтобы начать новую игру.');
@@ -1123,9 +1160,20 @@ bot.on(['sticker', 'text'], async (ctx) => {
             return;
         }
         
-        // Далее обрабатываем ход с использованием cardInfo
-        // Проверяем, есть ли игра в чате
-        const game = games.get(actualChatId);
+        // Проверка на игру в обоих ID (старом и новом)
+        let game = games.get(actualChatId);
+        
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
+        
         if (!game) {
             console.log(`[LOG] Игра не найдена в чате ${actualChatId}`);
             return; // Игры нет, просто пропускаем стикер
