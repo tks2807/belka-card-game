@@ -4,13 +4,16 @@ FROM node:18-alpine AS builder
 WORKDIR /app
 
 # Add Python and build tools for node-gyp
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ curl
 
 # Copy package files
 COPY package*.json ./
 
 # Install all dependencies from package.json
 RUN npm install
+
+# Install proxy packages
+RUN npm install --save https-proxy-agent proxy-agent node-fetch@2 socks-proxy-agent
 
 # Install Angular CLI globally with the same version as in package.json
 RUN npm install -g @angular/cli@15.2.0
@@ -48,7 +51,10 @@ RUN cp src/db/*.sql dist/bot/db/
 FROM nginx:alpine
 
 # Install Node.js in production stage for running the bot
-RUN apk add --no-cache nodejs npm
+RUN apk add --no-cache nodejs npm curl
+
+# Install proxy packages in production stage
+RUN npm install -g https-proxy-agent proxy-agent node-fetch@2 socks-proxy-agent
 
 # Create app directory in production stage
 WORKDIR /app
