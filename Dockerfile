@@ -40,6 +40,9 @@ RUN ng build --configuration production
 # Compile TypeScript bot files
 RUN npx tsc --project tsconfig.bot.json
 
+# Copy SQL files to dist/bot
+RUN find src -name "*.sql" -exec cp --parents {} dist/bot \;
+
 # Production stage
 FROM nginx:alpine
 
