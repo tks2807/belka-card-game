@@ -90,7 +90,7 @@ const bot = new Telegraf(process.env['BOT_TOKEN'] || '', {
 
 // Добавляем обработчик ошибок для бота
 bot.catch((err, ctx) => {
-  console.error(`Ошибка в боте для обновления ${ctx.updateType}:`, err);
+  console.error('Bot error:', err);
   
   // Обработка ошибки миграции чата в супергруппу
   if (err && typeof err === 'object' && 'description' in err && typeof err.description === 'string') {
@@ -102,7 +102,7 @@ bot.catch((err, ctx) => {
       
       console.log(`[MIGRATION] Обнаружена миграция чата из ${oldChatId} в супергруппу ${newChatId}`);
       
-      if (oldChatId && games.has(oldChatId)) {
+      if (oldChatId) {
         // Сохраняем сопоставление в ChatManager
         chatManager.addMapping(oldChatId, newChatId);
         
@@ -142,6 +142,21 @@ bot.catch((err, ctx) => {
           } catch (sendError) {
             console.error('[MIGRATION] Ошибка при отправке сообщения в новый чат:', sendError);
           }
+        } else {
+          // Если игры нет, просто сохраняем сопоставление
+          console.log(`[MIGRATION] Игра не найдена для чата ${oldChatId}, сохраняем только сопоставление`);
+        }
+        
+        // Пробуем отправить сообщение в новый чат
+        try {
+          if (ctx.message && 'text' in ctx.message) {
+            bot.telegram.sendMessage(
+              newChatId,
+              ctx.message.text
+            );
+          }
+        } catch (sendError) {
+          console.error('[MIGRATION] Ошибка при отправке сообщения в новый чат:', sendError);
         }
       }
     }
@@ -407,7 +422,20 @@ bot.command('join', async (ctx) => {
             return;
         }
 
+        // Проверяем, есть ли уже игра с актуальным ID чата
         let game = games.get(actualChatId);
+        
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
+        
         if (!game) {
             game = new BelkaGame(actualChatId);
             games.set(actualChatId, game);
@@ -419,47 +447,46 @@ bot.command('join', async (ctx) => {
                 await ctx.reply('Ошибка при присоединении к игре.');
             }
         } else {
+            // Игра уже существует, добавляем игрока
             const gameState = game.getGameState();
-            if (gameState.isActive) {
-                await ctx.reply('Игра уже запущена! Дождитесь окончания текущей игры.');
+            
+            // Проверяем, не в игре ли уже этот игрок
+            const playerExists = gameState.players.some(p => p.id === userId);
+            
+            if (playerExists) {
+                await ctx.reply('Вы уже присоединены к игре.');
                 return;
             }
-
-            if (gameState.players.some(p => p.id === userId)) {
-                await ctx.reply('Вы уже присоединились к игре!');
-                return;
-            }
-
+            
+            // Проверяем, не заполнена ли уже игра
             if (gameState.players.length >= 4) {
-                await ctx.reply('Игра уже заполнена! Максимум 4 игрока.');
+                await ctx.reply('Игра уже заполнена (4 игрока).');
                 return;
             }
-
-            const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
-            if (success) {
-                await ctx.reply(`${username} присоединился к игре!`);
-            } else {
-                await ctx.reply('Не удалось присоединиться к игре.');
+            
+            // Проверяем, не активна ли уже игра
+            if (gameState.isActive) {
+                await ctx.reply('Игра уже начата. Дождитесь следующей игры.');
+                return;
             }
-        }
-
-        // Показываем текущих игроков
-        const gameState = game.getGameState();
-        let playersList = 'Текущие игроки:\n';
-        gameState.players.forEach((player, index) => {
-            playersList += `${index + 1}. ${player.username}\n`;
-        });
-        
-        await ctx.reply(playersList);
-        
-        if (gameState.players.length === 4) {
-            await ctx.reply('Все игроки присоединились! Выберите режим игры:\n/startbelka - Классический режим (до 12 глаз)\n/startwalka - Быстрая игра (до 6 глаз)');
-        } else {
-            await ctx.reply(`Ожидание игроков... ${gameState.players.length}/4`);
+            
+            // Добавляем игрока
+            const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
+            
+            if (success) {
+                await ctx.reply('Вы присоединились к игре.');
+                
+                // Если это 4-й игрок, сообщаем о готовности начать игру
+                if (gameState.players.length === 4) {
+                    await ctx.reply('Все игроки собраны! Используйте /startbelka для начала игры в режиме "Белка" или /startwalka для режима "Шалқа".');
+                }
+            } else {
+                await ctx.reply('Ошибка при присоединении к игре.');
+            }
         }
     } catch (error) {
         console.error('Ошибка в команде /join:', error);
-        await ctx.reply('Произошла ошибка при присоединении к игре');
+        await ctx.reply('Произошла ошибка при обработке команды');
     }
 });
 
@@ -472,7 +499,19 @@ bot.command('startbelka', async (ctx) => {
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = chatManager.getActualChatId(chatId);
 
+        // Проверяем, есть ли уже игра с актуальным ID чата
         let game = games.get(actualChatId);
+        
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
         
         if (!game) {
             await ctx.reply('Игра не найдена. Создайте новую игру с помощью /join');
@@ -514,17 +553,6 @@ bot.command('startbelka', async (ctx) => {
               ]]
           }
       });
-        
-        // Отправляем сообщение о том, что игроки могут посмотреть свои карты
-        const botInfo = await ctx.telegram.getMe();
-        if (botInfo && botInfo.username) {
-            await ctx.reply(`Игра началась! Вы можете:
-1) Начинайте вводить @${botInfo.username} в строке сообщения, чтобы выбрать карту
-2) Для хода виртуальных игроков используйте: /play2, /play3, /play4`);
-        } else {
-            await ctx.reply('Игра началась! Отправьте название карты в чат для хода (например: "♠7" или "♥K").');
-        }
-        
     } catch (error) {
         console.error('Ошибка в команде /startbelka:', error);
         await ctx.reply('Произошла ошибка при запуске игры');
@@ -540,7 +568,19 @@ bot.command('startwalka', async (ctx) => {
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = chatManager.getActualChatId(chatId);
 
+        // Проверяем, есть ли уже игра с актуальным ID чата
         let game = games.get(actualChatId);
+        
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
         
         if (!game) {
             await ctx.reply('Игра не найдена. Создайте новую игру с помощью /join');
@@ -582,17 +622,6 @@ bot.command('startwalka', async (ctx) => {
               ]]
           }
       });
-        
-        // Отправляем сообщение о том, что игроки могут посмотреть свои карты
-        const botInfo = await ctx.telegram.getMe();
-        if (botInfo && botInfo.username) {
-            await ctx.reply(`Игра "Шалқа" началась! Вы будете играть до 6 глаз. Вы можете:
-1) Начинайте вводить @${botInfo.username} в строке сообщения, чтобы выбрать карту
-2) Для хода виртуальных игроков используйте: /play2, /play3, /play4`);
-        } else {
-            await ctx.reply('Игра "Шалқа" началась! Играем до 6 глаз. Отправьте название карты в чат для хода (например: "♠7" или "♥K").');
-        }
-        
     } catch (error) {
         console.error('Ошибка в команде /startwalka:', error);
         await ctx.reply('Произошла ошибка при запуске игры');
@@ -695,7 +724,20 @@ bot.command('endgame', async (ctx) => {
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = chatManager.getActualChatId(chatId);
 
-        const game = games.get(actualChatId);
+        // Проверяем, есть ли уже игра с актуальным ID чата
+        let game = games.get(actualChatId);
+        
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
+
         if (!game) {
             await ctx.reply('Игра не найдена');
             return;
