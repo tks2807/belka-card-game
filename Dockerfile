@@ -21,6 +21,9 @@ RUN npm install telegraf@4.12.2 dotenv@16.0.3 typescript@4.9.4 ts-node@10.9.1 @t
 # Install Angular CLI 15 globally
 RUN npm install -g @angular/cli@15.2.0
 
+# Install Angular build dependencies explicitly
+RUN npm install --save-dev @angular-devkit/build-angular@15.2.0 @angular/compiler-cli@15.2.0
+
 # Create necessary directories
 RUN mkdir -p data logs dist/bot
 
