@@ -88,6 +88,94 @@ const bot = new Telegraf(process.env['BOT_TOKEN'] || '', {
   handleSupergroups: true
 });
 
+// Перехватываем методы отправки сообщений для проверки ID чата
+const originalSendMessage = bot.telegram.sendMessage.bind(bot.telegram);
+bot.telegram.sendMessage = async (chatId: number | string, text: string, extra?: any) => {
+  try {
+    // Если это числовой ID и отрицательный (группа), проверяем актуальность
+    if (typeof chatId === 'number' && chatId < 0) {
+      const actualChatId = chatManager.getActualChatId(chatId);
+      if (chatId !== actualChatId) {
+        console.log(`[MIGRATION] Автоматически заменяем ID чата для отправки сообщения: ${chatId} -> ${actualChatId}`);
+        chatId = actualChatId;
+      }
+    }
+    return await originalSendMessage(chatId, text, extra);
+  } catch (error: any) {
+    // Если есть ошибка миграции, пробуем перехватить её здесь
+    if (error && 
+        typeof error === 'object' && 
+        'description' in error && 
+        typeof error.description === 'string' && 
+        error.description.includes('upgraded to a supergroup chat') && 
+        'parameters' in error && 
+        error.parameters && 
+        typeof error.parameters === 'object' &&
+        'migrate_to_chat_id' in error.parameters) {
+      
+      const oldChatId = chatId;
+      const newChatId = error.parameters.migrate_to_chat_id as number;
+      
+      console.log(`[MIGRATION] Обнаружена миграция чата при отправке сообщения: ${oldChatId} -> ${newChatId}`);
+      
+      // Сохраняем новое сопоставление
+      if (typeof oldChatId === 'number') {
+        chatManager.addMapping(oldChatId, newChatId);
+      }
+      
+      // Пробуем отправить сообщение в новый чат
+      console.log(`[MIGRATION] Повторная отправка сообщения в новый чат: ${newChatId}`);
+      return await originalSendMessage(newChatId, text, extra);
+    }
+    
+    throw error; // Переброс других ошибок
+  }
+};
+
+// Аналогично для других методов отправки
+const originalReplyWithSticker = bot.telegram.sendSticker.bind(bot.telegram);
+bot.telegram.sendSticker = async (chatId: number | string, sticker: string, extra?: any) => {
+  try {
+    // Если это числовой ID и отрицательный (группа), проверяем актуальность
+    if (typeof chatId === 'number' && chatId < 0) {
+      const actualChatId = chatManager.getActualChatId(chatId);
+      if (chatId !== actualChatId) {
+        console.log(`[MIGRATION] Автоматически заменяем ID чата для отправки стикера: ${chatId} -> ${actualChatId}`);
+        chatId = actualChatId;
+      }
+    }
+    return await originalReplyWithSticker(chatId, sticker, extra);
+  } catch (error: any) {
+    // Если есть ошибка миграции, пробуем перехватить её здесь
+    if (error && 
+        typeof error === 'object' && 
+        'description' in error && 
+        typeof error.description === 'string' && 
+        error.description.includes('upgraded to a supergroup chat') && 
+        'parameters' in error && 
+        error.parameters && 
+        typeof error.parameters === 'object' &&
+        'migrate_to_chat_id' in error.parameters) {
+      
+      const oldChatId = chatId;
+      const newChatId = error.parameters.migrate_to_chat_id as number;
+      
+      console.log(`[MIGRATION] Обнаружена миграция чата при отправке стикера: ${oldChatId} -> ${newChatId}`);
+      
+      // Сохраняем новое сопоставление
+      if (typeof oldChatId === 'number') {
+        chatManager.addMapping(oldChatId, newChatId);
+      }
+      
+      // Пробуем отправить стикер в новый чат
+      console.log(`[MIGRATION] Повторная отправка стикера в новый чат: ${newChatId}`);
+      return await originalReplyWithSticker(newChatId, sticker, extra);
+    }
+    
+    throw error; // Переброс других ошибок
+  }
+};
+
 // Добавляем обработчик ошибок для бота
 bot.catch((err, ctx) => {
   console.error('Bot error:', err);
