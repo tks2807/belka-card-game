@@ -4,10 +4,63 @@ import { message } from 'telegraf/filters';
 import { BelkaGame } from './game/BelkaGame';
 import { Player, CardSuit, Card, TableCard, GameState, CardRank } from './types/game.types';
 import { StatsService } from './services/StatsService';
+import { chatManager } from './services/ChatManager';
 import setupDatabase from './db/setupDatabase';
+import * as https from 'https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import fetch from 'node-fetch';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 
 // Загружаем переменные окружения
 dotenv.config();
+
+// Консоль-логи конфигурации
+console.log('Starting bot with environment:');
+console.log(`- NODE_ENV: ${process.env['NODE_ENV'] || 'not set'}`);
+console.log(`- HTTPS_PROXY: ${process.env['HTTPS_PROXY'] || 'not set'}`);
+console.log(`- USE_PROXY: ${process.env['USE_PROXY'] || 'not set'}`);
+console.log(`- TELEGRAM_API_URL: ${process.env['TELEGRAM_API_URL'] || 'https://api.telegram.org'}`);
+
+// Настройка агента для прокси, если указан
+let agent: any = undefined;
+const useProxy = process.env['USE_PROXY'] === 'true';
+
+if (useProxy && process.env['HTTPS_PROXY']) {
+  const proxyUrl = process.env['HTTPS_PROXY'];
+  console.log(`Using proxy: ${proxyUrl}`);
+  
+  try {
+    if (proxyUrl.startsWith('socks')) {
+      console.log('Using SOCKS proxy agent');
+      agent = new SocksProxyAgent(proxyUrl);
+    } else {
+      console.log('Using HTTPS proxy agent');
+      agent = new HttpsProxyAgent(proxyUrl);
+    }
+    
+    // Проверка proxy подключения
+    console.log('Testing proxy connection...');
+    fetch(`${process.env['TELEGRAM_API_URL'] || 'https://api.telegram.org'}/getMe`, {
+      agent,
+      timeout: 10000
+    }).then(res => {
+      console.log(`Proxy test status: ${res.status}`);
+    }).catch(err => {
+      console.error('Proxy test error:', err.message);
+    });
+  } catch (err) {
+    console.error('Error creating proxy agent:', err);
+    console.log('Falling back to direct connection');
+    agent = undefined;
+  }
+}
+
+// Настраиваем параметры HTTP запросов с увеличенным тайм-аутом
+const httpOptions = {
+  agent,
+  timeout: 60000, // 60 секунд тайм-аут
+  keepAlive: true
+};
 
 // Инициализируем базу данных перед запуском бота
 setupDatabase()
@@ -19,8 +72,79 @@ setupDatabase()
     process.exit(1);
   });
 
-// Инициализируем бота
-const bot = new Telegraf(process.env['BOT_TOKEN'] || '');
+// Инициализируем бота с дополнительными настройками
+const bot = new Telegraf(process.env['BOT_TOKEN'] || '', {
+  telegram: {
+    apiRoot: process.env['TELEGRAM_API_URL'] || 'https://api.telegram.org',
+    webhookReply: false,
+    agent: httpOptions.agent,
+    // @ts-ignore - timeoutMs поддерживается, но не объявлен в типах
+    timeoutMs: httpOptions.timeout
+  },
+  // Расширенное логирование для отладки проблем соединения
+  // @ts-ignore
+  debug: true
+});
+
+// Добавляем обработчик ошибок для бота
+bot.catch((err, ctx) => {
+  console.error(`Ошибка в боте для обновления ${ctx.updateType}:`, err);
+  
+  // Обработка ошибки миграции чата в супергруппу
+  if (err && typeof err === 'object' && 'description' in err && typeof err.description === 'string') {
+    // Поиск нового ID чата в сообщении об ошибке
+    const migrationMatch = err.description.match(/migrate to chat id (-\d+)/i);
+    if (migrationMatch && migrationMatch[1]) {
+      const oldChatId = ctx.chat?.id;
+      const newChatId = parseInt(migrationMatch[1], 10);
+      
+      console.log(`[MIGRATION] Обнаружена миграция чата из ${oldChatId} в супергруппу ${newChatId}`);
+      
+      if (oldChatId && games.has(oldChatId)) {
+        // Сохраняем сопоставление в ChatManager
+        chatManager.addMapping(oldChatId, newChatId);
+        
+        // Получаем игру из старого чата
+        const game = games.get(oldChatId);
+        
+        if (game) {
+          // Переносим игру в новый чат
+          games.set(newChatId, game);
+          games.delete(oldChatId);
+          
+          // Обновляем ID чата для всех игроков
+          const gameState = game.getGameState();
+          
+          gameState.players.forEach(player => {
+            if (player.chatId === oldChatId) {
+              player.chatId = newChatId;
+            }
+            
+            // Обновляем карты в хранилище
+            const playerInfo = playerCardsInPrivateChat.get(player.id);
+            if (playerInfo && playerInfo.gameId === oldChatId) {
+              playerCardsInPrivateChat.set(player.id, {
+                ...playerInfo,
+                gameId: newChatId
+              });
+            }
+          });
+          
+          // Сообщаем об успешной миграции
+          try {
+            bot.telegram.sendMessage(
+              newChatId, 
+              'Чат обновлен до супергруппы. Игра автоматически перенесена в новый чат.'
+            );
+            console.log('[MIGRATION] Игра успешно перенесена в новый чат');
+          } catch (sendError) {
+            console.error('[MIGRATION] Ошибка при отправке сообщения в новый чат:', sendError);
+          }
+        }
+      }
+    }
+  }
+});
 
 // Хранилище игр
 const games = new Map<number, BelkaGame>();
@@ -270,6 +394,9 @@ bot.command('join', async (ctx) => {
         const chatId = ctx.chat?.id;
         if (!chatId) return;
 
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+
         const userId = ctx.from?.id;
         const username = ctx.from?.username || `Player${userId}`;
         
@@ -278,12 +405,12 @@ bot.command('join', async (ctx) => {
             return;
         }
 
-        let game = games.get(chatId);
+        let game = games.get(actualChatId);
         if (!game) {
-            game = new BelkaGame(chatId);
-            games.set(chatId, game);
+            game = new BelkaGame(actualChatId);
+            games.set(actualChatId, game);
             // Добавляем пользователя в игру
-            const success = game.addPlayer({ id: userId, username, chatId });
+            const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
             if (success) {
                 await ctx.reply('Создана новая игра. Вы присоединились к игре.');
             } else {
@@ -306,7 +433,7 @@ bot.command('join', async (ctx) => {
                 return;
             }
 
-            const success = game.addPlayer({ id: userId, username, chatId });
+            const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
             if (success) {
                 await ctx.reply(`${username} присоединился к игре!`);
             } else {
@@ -340,7 +467,10 @@ bot.command('startbelka', async (ctx) => {
         const chatId = ctx.chat?.id;
         if (!chatId) return;
 
-        let game = games.get(chatId);
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+
+        let game = games.get(actualChatId);
         
         if (!game) {
             await ctx.reply('Игра не найдена. Создайте новую игру с помощью /join');
@@ -370,7 +500,7 @@ bot.command('startbelka', async (ctx) => {
             console.log(`[LOG] Добавляем карты игрока ${player.username} в хранилище для инлайн-режима`);
             playerCardsInPrivateChat.set(player.id, {
                 cards: [...player.cards],
-                gameId: chatId
+                gameId: actualChatId
             });
         });
         
@@ -405,7 +535,10 @@ bot.command('startwalka', async (ctx) => {
         const chatId = ctx.chat?.id;
         if (!chatId) return;
 
-        let game = games.get(chatId);
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+
+        let game = games.get(actualChatId);
         
         if (!game) {
             await ctx.reply('Игра не найдена. Создайте новую игру с помощью /join');
@@ -435,7 +568,7 @@ bot.command('startwalka', async (ctx) => {
             console.log(`[LOG] Добавляем карты игрока ${player.username} в хранилище для инлайн-режима (режим: Шалқа)`);
             playerCardsInPrivateChat.set(player.id, {
                 cards: [...player.cards],
-                gameId: chatId
+                gameId: actualChatId
             });
         });
         
@@ -470,7 +603,10 @@ bot.command('state', async (ctx) => {
         const chatId = ctx.chat?.id;
         if (!chatId) return;
 
-        const game = games.get(chatId);
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+
+        const game = games.get(actualChatId);
         if (!game) {
             await ctx.reply('Игра не найдена. Начните новую игру с помощью /startbelka');
             return;
@@ -521,7 +657,11 @@ bot.command('leaderboardchat', async (ctx) => {
   try {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
-    const leaderboardEntries = await statsService.getLeaderboardChat(chatId);
+    
+    // Используем ChatManager для получения актуального ID чата
+    const actualChatId = chatManager.getActualChatId(chatId);
+    
+    const leaderboardEntries = await statsService.getLeaderboardChat(actualChatId);
     if (leaderboardEntries.length === 0) {
       await ctx.reply('Лидерборд для этого чата пока пуст.');
       return;
@@ -550,7 +690,10 @@ bot.command('endgame', async (ctx) => {
         const userId = ctx.from?.id;
         if (!chatId || !userId) return;
 
-        const game = games.get(chatId);
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+
+        const game = games.get(actualChatId);
         if (!game) {
             await ctx.reply('Игра не найдена');
             return;
@@ -580,10 +723,10 @@ bot.command('endgame', async (ctx) => {
                         playerCardsInPrivateChat.delete(player.id);
                     });
                     
-                    console.log(`[LOG] Хранилище карт очищено для всех игроков после завершения игры в чате ${chatId}`);
+                    console.log(`[LOG] Хранилище карт очищено для всех игроков после завершения игры в чате ${actualChatId}`);
                     
                     // Удаляем игру из хранилища
-                    games.delete(chatId);
+                    games.delete(actualChatId);
                     await ctx.reply('Игра завершена по голосованию игроков. Используйте /join, чтобы начать новую игру.');
                 }
                 break;
@@ -602,6 +745,9 @@ bot.command('clearbot', async (ctx) => {
         const chatId = ctx.chat?.id;
         if (!chatId) return;
 
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+
         const userId = ctx.from?.id;
         if (!userId) {
             await ctx.reply('Не удалось определить пользователя');
@@ -609,11 +755,11 @@ bot.command('clearbot', async (ctx) => {
         }
 
         // Проверяем, существует ли игра для этого чата
-        const gameExists = games.has(chatId);
+        const gameExists = games.has(actualChatId);
         
         if (gameExists) {
             // Получаем игру перед удалением для очистки кэша карт
-            const game = games.get(chatId);
+            const game = games.get(actualChatId);
             if (game) {
                 const gameState = game.getGameState();
                 // Очищаем карты всех игроков из хранилища
@@ -621,11 +767,11 @@ bot.command('clearbot', async (ctx) => {
                     playerCardsInPrivateChat.delete(player.id);
                 });
                 
-                console.log(`[LOG] Хранилище карт очищено для всех игроков из чата ${chatId}`);
+                console.log(`[LOG] Хранилище карт очищено для всех игроков из чата ${actualChatId}`);
             }
             
             // Удаляем игру из хранилища
-            games.delete(chatId);
+            games.delete(actualChatId);
             await ctx.reply('🧹 Игра успешно сброшена. Используйте /join, чтобы начать новую игру.');
         } else {
             await ctx.reply('Активной игры не найдено. Используйте /join, чтобы начать новую игру.');
@@ -891,6 +1037,9 @@ bot.on(['sticker', 'text'], async (ctx) => {
         const userId = ctx.from?.id;
         if (!chatId || !userId) return;
         
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+        
         // Проверяем, является ли сообщение стикером или текстом с информацией о карте
         let stickerId: string | null = null;
         let fileUniqueId: string | null = null;
@@ -903,7 +1052,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
             
             // Логирование стикера
             console.log(`[LOG] Получен стикер с ID: ${stickerId}`);
-            console.log(`[LOG] Стикер от пользователя: ${userId}, в чате: ${chatId}`);
+            console.log(`[LOG] Стикер от пользователя: ${userId}, в чате: ${actualChatId}`);
             
             // Ищем карту по стикеру
             if (stickerId && stickerToCard.has(stickerId)) {
@@ -932,16 +1081,16 @@ bot.on(['sticker', 'text'], async (ctx) => {
         
         // Далее обрабатываем ход с использованием cardInfo
         // Проверяем, есть ли игра в чате
-        const game = games.get(chatId);
+        const game = games.get(actualChatId);
         if (!game) {
-            console.log(`[LOG] Игра не найдена в чате ${chatId}`);
+            console.log(`[LOG] Игра не найдена в чате ${actualChatId}`);
             return; // Игры нет, просто пропускаем стикер
         }
 
         // Получаем состояние игры
         const gameState = game.getGameState();
         if (!gameState.isActive) {
-            console.log(`[LOG] Игра не активна в чате ${chatId}`);
+            console.log(`[LOG] Игра не активна в чате ${actualChatId}`);
             return; // Игра не активна, пропускаем
         }
 
@@ -1076,7 +1225,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
                 if (player.cards.length > 0) {
                     playerCardsInPrivateChat.set(player.id, {
                         cards: [...player.cards],
-                        gameId: chatId // Используем chatId вместо updatedState.chatId
+                        gameId: actualChatId // Используем actualChatId вместо chatId
                     });
                 } else {
                     playerCardsInPrivateChat.delete(player.id);

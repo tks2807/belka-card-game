@@ -112,12 +112,14 @@ echo "Starting nginx server..."
 nginx
 echo "Nginx started."
 
-# Увеличиваем тайм-аут для запросов Node.js
+# Увеличиваем тайм-аут для запросов Node.js и активируем обработку супергрупп
 export NODE_OPTIONS="--dns-result-order=ipv4first --no-warnings --max-http-header-size=16384 --http-parser=legacy"
 
 # Устанавливаем переменные среды для бота
 export TELEGRAM_API_URL="https://api.telegram.org"
 export TELEGRAF_LOGGING_LEVEL="debug"
+export TELEGRAF_HANDLE_SUPERGROUPS="true"
+export NODE_DEBUG="telegraf"
 
 # Дополнительная диагностика перед запуском бота
 echo "==================================="
@@ -131,7 +133,16 @@ echo "==================================="
 echo "Starting bot with the following configuration:"
 echo "USE_PROXY: ${USE_PROXY:-false}"
 echo "NODE_OPTIONS: $NODE_OPTIONS"
+echo "TELEGRAF_HANDLE_SUPERGROUPS: $TELEGRAF_HANDLE_SUPERGROUPS"
 echo "==================================="
+
+# Проверяем исходный JSON-файл бота для кэшированных данных чатов
+if [ ! -f /app/data/chats_cache.json ]; then
+  echo "Creating empty chats cache file..."
+  mkdir -p /app/data
+  echo "{}" > /app/data/chats_cache.json
+  chmod 666 /app/data/chats_cache.json
+fi
 
 # Start the compiled bot
 cd /app && node dist/bot/index.js 
