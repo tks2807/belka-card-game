@@ -83,7 +83,9 @@ const bot = new Telegraf(process.env['BOT_TOKEN'] || '', {
   },
   // Расширенное логирование для отладки проблем соединения
   // @ts-ignore
-  debug: true
+  debug: true,
+  // Добавляем обработку супергрупп
+  handleSupergroups: true
 });
 
 // Добавляем обработчик ошибок для бота
