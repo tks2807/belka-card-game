@@ -40,8 +40,9 @@ RUN ng build --configuration production
 # Compile TypeScript bot files
 RUN npx tsc --project tsconfig.bot.json
 
-# Copy SQL files to dist/bot
-RUN find src -name "*.sql" -exec cp --parents {} dist/bot \;
+# Copy SQL files to dist/bot - более явный способ
+RUN mkdir -p dist/bot/db
+RUN cp src/db/*.sql dist/bot/db/
 
 # Production stage
 FROM nginx:alpine
@@ -59,6 +60,8 @@ COPY --from=builder /app/dist/my-angular-app/* /usr/share/nginx/html/
 COPY --from=builder /app/dist/bot ./dist/bot
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json .
+# Также явно копируем SQL файлы в финальный образ
+COPY --from=builder /app/src/db/*.sql ./dist/bot/db/
 
 # Create and set permissions for data directories
 RUN mkdir -p data logs && chown -R nginx:nginx data logs
