@@ -459,26 +459,86 @@ bot.on('inline_query', async (ctx) => {
     }
 });
 
-// Обработчик команды /start
-bot.start((ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
-
-    // Используем ChatManager для получения актуального ID чата
-    const actualChatId = chatManager.getActualChatId(chatId);
+// Безопасная отправка сообщений
+async function safeSendMessage(ctx: any, text: string, extra?: any) {
+  try {
+    return await ctx.reply(text, extra);
+  } catch (error: any) {
+    if (error && 
+        typeof error === 'object' && 
+        'description' in error && 
+        typeof error.description === 'string' && 
+        error.description.includes('bot was blocked by the user')) {
+      let userId = "неизвестный";
+      if (error.on && typeof error.on === 'object' && 'payload' in error.on && 
+          typeof error.on.payload === 'object' && error.on.payload && 'chat_id' in error.on.payload) {
+        userId = String(error.on.payload.chat_id);
+      }
+      console.log(`[BLOCKED] Пользователь ${userId} заблокировал бота. Пропускаем сообщение.`);
+      return null;
+    }
     
-    ctx.reply('Добро пожаловать в игру Белка! Используйте /help для получения списка команд.');
+    // Для ошибок миграции чата
+    if (error && 
+        typeof error === 'object' && 
+        'description' in error && 
+        typeof error.description === 'string' && 
+        error.description.includes('upgraded to a supergroup chat') && 
+        'parameters' in error && 
+        error.parameters && 
+        typeof error.parameters === 'object' &&
+        'migrate_to_chat_id' in error.parameters) {
+      
+      const oldChatId = ctx.chat?.id;
+      const newChatId = error.parameters.migrate_to_chat_id as number;
+      
+      console.log(`[MIGRATION] Обнаружена миграция чата при выполнении команды: ${oldChatId} -> ${newChatId}`);
+      
+      // Сохраняем новое сопоставление
+      if (oldChatId && typeof oldChatId === 'number') {
+        chatManager.addMapping(oldChatId, newChatId);
+        
+        // Пробуем отправить сообщение в новый чат
+        try {
+          console.log(`[MIGRATION] Повторная отправка сообщения в новый чат: ${newChatId}`);
+          return await bot.telegram.sendMessage(newChatId, text, extra);
+        } catch (retryError) {
+          console.error('[MIGRATION] Ошибка при повторной отправке:', retryError);
+        }
+      }
+    }
+    
+    // Логируем другие ошибки, но не останавливаем бота
+    console.error('Ошибка при отправке сообщения:', error);
+    return null;
+  }
+}
+
+// Обработчик команды /start
+bot.start(async (ctx) => {
+    try {
+        const chatId = ctx.chat?.id;
+        if (!chatId) return;
+
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+        
+        await safeSendMessage(ctx, 'Добро пожаловать в игру Белка! Используйте /help для получения списка команд.');
+    } catch (error) {
+        console.error('Ошибка в команде /start:', error);
+    }
 });
 
 // Обработчик команды /help
-bot.help((ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
+bot.help(async (ctx) => {
+    try {
+        const chatId = ctx.chat?.id;
+        if (!chatId) return;
 
-    // Используем ChatManager для получения актуального ID чата
-    const actualChatId = chatManager.getActualChatId(chatId);
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
 
-    const helpText = `
+        const helpText = `
 Белка - карточная игра для 4 игроков.
 
 Команды:
@@ -518,7 +578,10 @@ bot.help((ctx) => {
 - Если обе команды набрали по 60 очков = "яйца" (раунд переигрывается, победитель получает 4 очка)
 - Пересдача: если у игрока ≤13 очков или ≥5 карт одной масти
 `;
-    ctx.reply(helpText);
+        await safeSendMessage(ctx, helpText);
+    } catch (error) {
+        console.error('Ошибка в команде /help:', error);
+    }
 });
 
 // Обработчик команды /join
@@ -534,7 +597,7 @@ bot.command('join', async (ctx) => {
         const username = ctx.from?.username || `Player${userId}`;
         
         if (!userId) {
-            await ctx.reply('Не удалось определить пользователя');
+            await safeSendMessage(ctx, 'Не удалось определить пользователя');
             return;
         }
 
@@ -558,9 +621,9 @@ bot.command('join', async (ctx) => {
             // Добавляем пользователя в игру
             const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
             if (success) {
-                await ctx.reply('Создана новая игра. Вы присоединились к игре.');
+                await safeSendMessage(ctx, 'Создана новая игра. Вы присоединились к игре.');
             } else {
-                await ctx.reply('Ошибка при присоединении к игре.');
+                await safeSendMessage(ctx, 'Ошибка при присоединении к игре.');
             }
         } else {
             // Игра уже существует, добавляем игрока
@@ -570,19 +633,19 @@ bot.command('join', async (ctx) => {
             const playerExists = gameState.players.some(p => p.id === userId);
             
             if (playerExists) {
-                await ctx.reply('Вы уже присоединены к игре.');
+                await safeSendMessage(ctx, 'Вы уже присоединены к игре.');
                 return;
             }
             
             // Проверяем, не заполнена ли уже игра
             if (gameState.players.length >= 4) {
-                await ctx.reply('Игра уже заполнена (4 игрока).');
+                await safeSendMessage(ctx, 'Игра уже заполнена (4 игрока).');
                 return;
             }
             
             // Проверяем, не активна ли уже игра
             if (gameState.isActive) {
-                await ctx.reply('Игра уже начата. Дождитесь следующей игры.');
+                await safeSendMessage(ctx, 'Игра уже начата. Дождитесь следующей игры.');
                 return;
             }
             
@@ -590,19 +653,19 @@ bot.command('join', async (ctx) => {
             const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
             
             if (success) {
-                await ctx.reply('Вы присоединились к игре.');
+                await safeSendMessage(ctx, 'Вы присоединились к игре.');
                 
                 // Если это 4-й игрок, сообщаем о готовности начать игру
                 if (gameState.players.length === 4) {
-                    await ctx.reply('Все игроки собраны! Используйте /startbelka для начала игры в режиме "Белка" или /startwalka для режима "Шалқа".');
+                    await safeSendMessage(ctx, 'Все игроки собраны! Используйте /startbelka для начала игры в режиме "Белка" или /startwalka для режима "Шалқа".');
                 }
             } else {
-                await ctx.reply('Ошибка при присоединении к игре.');
+                await safeSendMessage(ctx, 'Ошибка при присоединении к игре.');
             }
         }
     } catch (error) {
         console.error('Ошибка в команде /join:', error);
-        await ctx.reply('Произошла ошибка при обработке команды');
+        // Не выбрасываем ошибку дальше, чтобы не останавливать бота
     }
 });
 
@@ -630,19 +693,19 @@ bot.command('startbelka', async (ctx) => {
         }
         
         if (!game) {
-            await ctx.reply('Игра не найдена. Создайте новую игру с помощью /join');
+            await safeSendMessage(ctx, 'Игра не найдена. Создайте новую игру с помощью /join');
             return;
         }
         
         const gameState = game.getGameState();
         
         if (gameState.isActive) {
-            await ctx.reply('Игра уже запущена!');
+            await safeSendMessage(ctx, 'Игра уже запущена!');
             return;
         }
         
         if (gameState.players.length < 4) {
-            await ctx.reply(`Недостаточно игроков! Текущее количество: ${gameState.players.length}/4`);
+            await safeSendMessage(ctx, `Недостаточно игроков! Текущее количество: ${gameState.players.length}/4`);
             return;
         }
         
@@ -662,7 +725,7 @@ bot.command('startbelka', async (ctx) => {
         });
         
         // Отправляем информацию о начальном состоянии игры в чат
-        await ctx.reply(gameSummary, {
+        await safeSendMessage(ctx, gameSummary, {
           reply_markup: {
               inline_keyboard: [[
                   { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
@@ -671,7 +734,7 @@ bot.command('startbelka', async (ctx) => {
       });
     } catch (error) {
         console.error('Ошибка в команде /startbelka:', error);
-        await ctx.reply('Произошла ошибка при запуске игры');
+        // Не выбрасываем ошибку дальше, чтобы не останавливать бота
     }
 });
 
@@ -699,19 +762,19 @@ bot.command('startwalka', async (ctx) => {
         }
         
         if (!game) {
-            await ctx.reply('Игра не найдена. Создайте новую игру с помощью /join');
+            await safeSendMessage(ctx, 'Игра не найдена. Создайте новую игру с помощью /join');
             return;
         }
         
         const gameState = game.getGameState();
         
         if (gameState.isActive) {
-            await ctx.reply('Игра уже запущена!');
+            await safeSendMessage(ctx, 'Игра уже запущена!');
             return;
         }
         
         if (gameState.players.length < 4) {
-            await ctx.reply(`Недостаточно игроков! Текущее количество: ${gameState.players.length}/4`);
+            await safeSendMessage(ctx, `Недостаточно игроков! Текущее количество: ${gameState.players.length}/4`);
             return;
         }
         
@@ -731,7 +794,7 @@ bot.command('startwalka', async (ctx) => {
         });
         
         // Отправляем информацию о начальном состоянии игры в чат
-        await ctx.reply(gameSummary, {
+        await safeSendMessage(ctx, gameSummary, {
           reply_markup: {
               inline_keyboard: [[
                   { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
@@ -740,7 +803,7 @@ bot.command('startwalka', async (ctx) => {
       });
     } catch (error) {
         console.error('Ошибка в команде /startwalka:', error);
-        await ctx.reply('Произошла ошибка при запуске игры');
+        // Не выбрасываем ошибку дальше, чтобы не останавливать бота
     }
 });
 
@@ -768,13 +831,13 @@ bot.command('state', async (ctx) => {
         }
 
         if (!game) {
-            await ctx.reply('Игра не найдена. Начните новую игру с помощью /startbelka');
+            await safeSendMessage(ctx, 'Игра не найдена. Начните новую игру с помощью /startbelka');
             return;
         }
 
         // Получаем и отправляем информацию о текущем состоянии игры
         const gameSummary = game.getGameSummary();
-        await ctx.reply(gameSummary, {
+        await safeSendMessage(ctx, gameSummary, {
             reply_markup: {
                 inline_keyboard: [[
                     { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
@@ -783,7 +846,7 @@ bot.command('state', async (ctx) => {
         });
     } catch (error) {
         console.error('Ошибка в команде /state:', error);
-        await ctx.reply('Произошла ошибка при получении состояния игры');
+        // Не выбрасываем ошибку дальше, чтобы не останавливать бота
     }
 });
 
@@ -828,7 +891,7 @@ bot.command('leaderboardchat', async (ctx) => {
     
     const leaderboardEntries = await statsService.getLeaderboardChat(actualChatId);
     if (leaderboardEntries.length === 0) {
-      await ctx.reply('Лидерборд для этого чата пока пуст.');
+      await safeSendMessage(ctx, 'Лидерборд для этого чата пока пуст.');
       return;
     }
     let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
@@ -841,10 +904,10 @@ bot.command('leaderboardchat', async (ctx) => {
         `🎖 Голая победа: ${stats.golayaCount}\n` +
         `🥚 Яйца: ${stats.eggsCount}\n\n`;
     });
-    await ctx.reply(message);
+    await safeSendMessage(ctx, message);
   } catch (error) {
     console.error('Ошибка при получении лидерборда для чата:', error);
-    await ctx.reply('Произошла ошибка при получении лидерборда для этого чата.');
+    // Не выбрасываем ошибку дальше, чтобы не останавливать бота
   }
 });
 
