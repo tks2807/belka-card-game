@@ -180,6 +180,22 @@ bot.telegram.sendSticker = async (chatId: number | string, sticker: string, extr
 bot.catch((err, ctx) => {
   console.error('Bot error:', err);
   
+  // Если пользователь заблокировал бота, логируем и не прерываем работу
+  if (err && typeof err === 'object' && 'description' in err && 
+      typeof err.description === 'string' && err.description.includes('bot was blocked by the user')) {
+    
+    // Извлекаем ID пользователя, если возможно
+    let userId = "неизвестный";
+    if (err && typeof err === 'object' && 'on' in err && 
+        typeof err.on === 'object' && err.on !== null && 'payload' in err.on && 
+        typeof err.on.payload === 'object' && err.on.payload !== null && 'chat_id' in err.on.payload) {
+      userId = String((err.on.payload as any).chat_id);
+    }
+    
+    console.log(`[BLOCKED] Пользователь ${userId} заблокировал бота. Пропускаем сообщение.`);
+    return; // Просто логируем и продолжаем работу
+  }
+  
   // Обработка ошибки миграции чата в супергруппу
   if (err && typeof err === 'object' && 'description' in err && typeof err.description === 'string') {
     // Поиск нового ID чата в сообщении об ошибке
