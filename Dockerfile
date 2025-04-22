@@ -7,31 +7,32 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 # Copy package files
-COPY package.json ./
+COPY package*.json ./
 
-# Remove existing package-lock.json if it exists
-RUN rm -f package-lock.json
-
-# Install dependencies and generate new package-lock.json
+# Install all dependencies from package.json
 RUN npm install
 
-# Add bot dependencies
-RUN npm install telegraf@4.12.2 dotenv@16.0.3 typescript@4.9.4 ts-node@10.9.1 @types/node@18.15.11
-
-# Install Angular CLI 15 globally
+# Install Angular CLI globally with the same version as in package.json
 RUN npm install -g @angular/cli@15.2.0
 
-# Install Angular build dependencies explicitly
-RUN npm install --save-dev @angular-devkit/build-angular@15.2.0 @angular/compiler-cli@15.2.0
+# Verify @angular/core and other essential Angular dependencies are installed
+RUN npm list @angular/core || (echo "Installing @angular/core and other essential Angular packages" && \
+    npm install @angular/core@15.2.0 @angular/common@15.2.0 @angular/platform-browser@15.2.0 \
+    @angular/platform-browser-dynamic@15.2.0 @angular/compiler@15.2.0 @angular/forms@15.2.0 \
+    @angular/router@15.2.0 @angular-devkit/build-angular@15.2.0 @angular/compiler-cli@15.2.0 \
+    rxjs@7.8.0 zone.js@0.12.0)
 
 # Create necessary directories
 RUN mkdir -p data logs dist/bot
 
-# Copy TypeScript configs first
+# Copy TypeScript configs
 COPY tsconfig*.json ./
 
 # Copy the rest of the application
 COPY . .
+
+# Check if node_modules/@angular/core exists before building
+RUN test -d node_modules/@angular/core || (echo "ERROR: @angular/core is missing after setup" && exit 1)
 
 # Build the Angular application
 RUN ng build --configuration production
@@ -49,7 +50,7 @@ RUN apk add --no-cache nodejs npm
 WORKDIR /app
 
 # Copy built Angular files to nginx
-COPY --from=builder /app/dist/belka-card-game/* /usr/share/nginx/html/
+COPY --from=builder /app/dist/my-angular-app/* /usr/share/nginx/html/
 
 # Copy compiled bot files and dependencies
 COPY --from=builder /app/dist/bot ./dist/bot
