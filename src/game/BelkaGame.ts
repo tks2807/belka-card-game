@@ -539,31 +539,8 @@ export class BelkaGame {
             return;
         }
 
-        // Проверка на "яйца" (по 60 очков)
-        if (this.state.teams.team1.score === 60 && this.state.teams.team2.score === 60) {
-            this.state.players.forEach(player => {
-                this.statsService.updatePlayerStats(
-                    player.id,
-                    player.username,
-                    false,
-                    0,
-                    0,
-                    true,
-                    false,
-                    this.state.chatId
-                );
-            });
-            // Логика для "яиц" - переигрываем раунд
-            this.state.eggsTiebreaker = true; // Устанавливаем флаг переигровки
-            
-            // При переигровке "яиц" мы уменьшаем номер раунда на 1,
-            // чтобы startNewRound() увеличил его обратно и сохранил тот же номер раунда,
-            // но при этом первый ход должен перейти к следующему игроку по порядку
-            this.state.currentRound--;
-            
-            this.startNewRound(); // Переигрываем раунд 
-            return;
-        }
+        // Убираем проверку на "яйца" и переигровку, так как это теперь полностью обрабатывается в finishRound
+        // Эта логика больше не нужна здесь, чтобы избежать дублирования и ошибок
 
         // Обычный подсчет глаз
         if (this.state.teams.team1.score >= 91) {
@@ -729,6 +706,79 @@ export class BelkaGame {
 
         // Проверка на "яйца" (по 60 очков)
         if (this.state.teams.team1.score === 60 && this.state.teams.team2.score === 60) {
+            // Устанавливаем флаг переигровки
+            this.state.eggsTiebreaker = true;
+            
+            // Обновляем статистику игроков для переигровки "яиц"
+            this.state.players.forEach(player => {
+                this.statsService.updatePlayerStats(
+                    player.id,
+                    player.username,
+                    false,
+                    0,
+                    0,
+                    true,
+                    false,
+                    this.state.chatId
+                );
+            });
+            
+            // Сохраняем козырь текущего раунда для использования в переигровке
+            const currentTrump = this.state.trump;
+            
+            // Переигрываем ТЕКУЩИЙ раунд
+            // Уменьшаем номер раунда на 1, чтобы при увеличении в startNewRound он остался тем же
+            this.state.currentRound--;
+            
+            // Сбрасываем счет и взятки для переигровки
+            this.state.teams.team1.score = 0;
+            this.state.teams.team1.tricks = 0;
+            this.state.teams.team2.score = 0;
+            this.state.teams.team2.tricks = 0;
+            
+            // Создаем новую колоду и раздаем карты
+            this.state.deck = this.createDeck();
+            this.dealCards();
+            
+            // Проверяем, нужна ли пересдача
+            let needReshuffle = false;
+            for (const player of this.state.players) {
+                if (this.checkForReshuffle(player.id)) {
+                    needReshuffle = true;
+                    console.log(`[LOG] Требуется пересдача для игрока ${player.username}`);
+                    break;
+                }
+            }
+            
+            if (needReshuffle) {
+                console.log(`[LOG] Выполняем пересдачу карт`);
+                // Пересдаем карты
+                this.state.deck = this.createDeck();
+                this.shuffleDeck(this.state.deck);
+                this.dealCards();
+            }
+            
+            // Передаем первый ход следующему игроку по порядку
+            this.state.currentPlayerIndex = (this.state.currentRound) % this.state.players.length;
+            console.log(`[LOG] Первый ход при переигровке раунда ${this.state.currentRound+1} передан игроку ${this.state.players[this.state.currentPlayerIndex].username}`);
+            
+            // Находим игрока с валетом крести
+            this.state.clubJackHolder = null;
+            for (const player of this.state.players) {
+                if (player.cards.some(card => card.rank === 'J' && card.suit === '♣')) {
+                    console.log(`[LOG] Валет крести у игрока ${player.username}`);
+                    this.state.clubJackHolder = player;
+                    break;
+                }
+            }
+            
+            // Увеличиваем номер раунда ПОСЛЕ всех настроек
+            this.state.currentRound++;
+            
+            // Восстанавливаем тот же козырь, что и в исходном раунде
+            this.state.trump = currentTrump;
+            console.log(`[LOG] При переигровке сохранен козырь: ${this.state.trump}`);
+            
             return "🥚 Яйца! Обе команды набрали по 60 очков. Раунд будет переигран, победившая команда получит 4 очка.";
         }
 
@@ -961,8 +1011,14 @@ export class BelkaGame {
         const gameModeName = this.state.gameMode === 'belka' ? 'Белка' : 'Шалқа';
 
         let summary = `🎮 Режим игры: ${gameModeName} (до ${eyesToWin} глаз)\n`;
-        summary += `🃏 Раунд ${this.state.currentRound}\n`;
-        summary += `♠️♣️♦️♥️ Козырь: ${this.state.trump}`;
+        summary += `🃏 Раунд ${this.state.currentRound}`;
+        
+        // Добавляем информацию, что раунд переигрывается из-за "яиц"
+        if (this.state.eggsTiebreaker) {
+            summary += ` (переигровка после "яиц" - победитель получит 4 глаза!)`;
+        }
+        
+        summary += `\n♠️♣️♦️♥️ Козырь: ${this.state.trump}`;
 
         // Показываем информацию о держателе валета крести только после первого раунда
         if (this.state.clubJackHolder && !this.state.hideClubJackHolder) {
