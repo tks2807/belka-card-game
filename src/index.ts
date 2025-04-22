@@ -101,12 +101,11 @@ bot.telegram.setMyCommands([
     { command: 'join', description: 'Присоединиться к игре' },
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
-    { command: 'state', description: 'Показать текущее состояние игры' },
     { command: 'leaderboardall', description: 'Показать глобальную таблицу лидеров' },
     { command: 'leaderboardchat', description: 'Показать таблицу лидеров для текущего чата' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
     { command: 'clearbot', description: 'Сбросить игру' },
-    { command: 'inline_setup', description: 'Инструкция по настройке инлайн-режима' }
+    { command: 'warmuty', description: 'Показать благодарности участникам проекта' }
 ]).then(() => {
     // Включаем инлайн-режим
     return bot.telegram.setWebhook(''); // Сбрасываем вебхук для long polling
@@ -1139,6 +1138,25 @@ bot.command('inline_setup', async (ctx) => {
     } catch (error) {
         console.error('Ошибка при выполнении команды inline_setup:', error);
         await ctx.reply('Произошла ошибка при получении информации о боте');
+    }
+});
+
+// Обработка команды /warmuty - для благодарностей участникам проекта
+bot.command('warmuty', async (ctx) => {
+    try {
+        const thanksMessage = `Спасибо шармутам поддерживающим проект: 
+@adylkanovv
+@dossi4
+@m1ralem
+@ozhek
+@aidar_t
+@xviiali
+@t0ksss`;
+        
+        await ctx.reply(thanksMessage);
+    } catch (error) {
+        console.error('Ошибка при выполнении команды warmuty:', error);
+        await ctx.reply('Произошла ошибка при отображении благодарностей');
     }
 });
 
