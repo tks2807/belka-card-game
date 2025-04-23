@@ -682,6 +682,18 @@ bot.command('join', async (ctx) => {
     }
 });
 
+// Обработка команды /warmuty - для благодарностей участникам проекта
+bot.command('warmuty', async (ctx) => {
+  try {
+      const thanksMessage = `Спасибо шармутам поддерживающим проект: @adylkanovv @dossi4 @m1ralem @ozhek @aidar_t @xviiali @t0ksss`;
+      
+      await safeSendMessage(ctx, thanksMessage);
+  } catch (error) {
+      console.error('Ошибка при выполнении команды warmuty:', error);
+      await safeSendMessage(ctx, 'Произошла ошибка при отображении благодарностей');
+  }
+});
+
 // Обработчик команды /startbelka
 bot.command('startbelka', async (ctx) => {
     try {
@@ -1559,25 +1571,6 @@ bot.command('inline_setup', async (ctx) => {
     } catch (error) {
         console.error('Ошибка при выполнении команды inline_setup:', error);
         await ctx.reply('Произошла ошибка при получении информации о боте');
-    }
-});
-
-// Обработка команды /warmuty - для благодарностей участникам проекта
-bot.command('warmuty', async (ctx) => {
-    try {
-        const thanksMessage = `Спасибо шармутам поддерживающим проект: 
-@adylkanovv
-@dossi4
-@m1ralem
-@ozhek
-@aidar_t
-@xviiali
-@t0ksss`;
-        
-        await safeSendMessage(ctx, thanksMessage);
-    } catch (error) {
-        console.error('Ошибка при выполнении команды warmuty:', error);
-        await safeSendMessage(ctx, 'Произошла ошибка при отображении благодарностей');
     }
 });
 
