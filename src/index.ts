@@ -663,6 +663,19 @@ bot.command('join', async (ctx) => {
                 await safeSendMessage(ctx, 'Ошибка при присоединении к игре.');
             }
         }
+
+        const gameState = game.getGameState();
+        let playersList = 'Текущие игроки:\n';
+        gameState.players.forEach((player, index) => {
+          playersList += `${index + 1}. ${player.username}\n`;
+        });
+
+        await safeSendMessage(ctx, playersList);
+        if (gameState.players.length === 4) {
+          await safeSendMessage(ctx, 'Все игроки присоединились! Выберите режим игры:\n/startbelka - Классический режим (до 12 глаз)\n/startwalka - Быстрая игра (до 6 глаз)');
+        } else {
+          await safeSendMessage(ctx, `Ожидание игроков... ${gameState.players.length}/4`);
+        }
     } catch (error) {
         console.error('Ошибка в команде /join:', error);
         // Не выбрасываем ошибку дальше, чтобы не останавливать бота
@@ -1561,10 +1574,10 @@ bot.command('warmuty', async (ctx) => {
 @xviiali
 @t0ksss`;
         
-        await ctx.reply(thanksMessage);
+        await safeSendMessage(ctx, thanksMessage);
     } catch (error) {
         console.error('Ошибка при выполнении команды warmuty:', error);
-        await ctx.reply('Произошла ошибка при отображении благодарностей');
+        await safeSendMessage(ctx, 'Произошла ошибка при отображении благодарностей');
     }
 });
 
