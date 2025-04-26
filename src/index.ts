@@ -685,7 +685,7 @@ bot.command('join', async (ctx) => {
 // Обработка команды /warmuty - для благодарностей участникам проекта
 bot.command('warmuty', async (ctx) => {
   try {
-      const thanksMessage = `Спасибо шармутам поддерживающим проект: @adylkanovv @dossi4 @m1ralem @ozhek @aidar_t @xviiali @t0ksss`;
+      const thanksMessage = `Спасибо шармутам поддерживающим проект: @adylkanovv @dossi4 @m1ralem @ozhek @aidar_t @xviiali @t0ksss @baabyll`;
       
       await safeSendMessage(ctx, thanksMessage);
   } catch (error) {
