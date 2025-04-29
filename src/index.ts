@@ -689,7 +689,7 @@ bot.command('warmuty', async (ctx) => {
       
       await safeSendMessage(ctx, thanksMessage);
   } catch (error) {
-      console.error('Ошибка при выполнении команды warmuty:', error);
+      console.error('Ошибка при выполнении команды warmuty: ', error);
       await safeSendMessage(ctx, 'Произошла ошибка при отображении благодарностей');
   }
 });
