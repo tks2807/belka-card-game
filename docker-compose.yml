@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15
+    container_name: belka-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
   belka-game:
     build:
       context: .
@@ -10,15 +23,18 @@ services:
     ports:
       - "80:80"  # Web application port
       - "3000:3000"  # Bot API port
-    environment:
-      - NODE_ENV=production
-      - BOT_TOKEN=${BOT_TOKEN}
+    env_file:
+      - .env
+    depends_on:
+      - db
     volumes:
       - ./data:/app/data  # For persistent bot data
       - ./logs:/app/logs  # For logs
-      - ./player_stats.json:/app/player_stats.json  # For player statistics
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+volumes:
+  db_data:
