@@ -877,63 +877,103 @@ bot.command('state', async (ctx) => {
 
 const statsService = new StatsService();
 
-bot.command('leaderboardall', async (ctx) => {
-  try {
-    const leaderboardEntries = await statsService.getLeaderboardAll();
-    if (leaderboardEntries.length === 0) {
-      await ctx.reply('Лидерборд пока пуст.');
-      return;
-    }
-    let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
-    leaderboardEntries.forEach(([playerId, stats], index) => {
-      message += `${index + 1}. ${stats.username}\n` +
-        `🃏 Игры: ${stats.gamesPlayed}\n` +
-        `🏆 Победы: ${stats.gamesWon}\n` +
-        `🔢 Очки: ${stats.totalScore}\n` +
-        `✂️ Взяток: ${stats.totalTricks}\n` +
-        `🎖 Голые победы: ${stats.golayaCount}\n` +
-        `🥚 Яйца: ${stats.eggsCount}\n\n`;
-    });
-    await ctx.reply(message);
-  } catch (error) {
-    console.error('Ошибка при получении глобального лидерборда:', error);
-    await ctx.reply('Произошла ошибка при получении глобального лидерборда.');
+// --- Leaderboard Pagination ---
+
+const LEADERBOARD_LIMIT = 4;
+
+// Helper to send leaderboard (all)
+async function sendLeaderboardAll(ctx: any, offset = 0, isEdit = false) {
+  console.log('sendLeaderboardAll called with offset:', offset, 'isEdit:', isEdit);
+  const limit = LEADERBOARD_LIMIT;
+  const leaderboardEntries = await statsService.getLeaderboardAll(offset, limit);
+  console.log('Fetched leaderboardEntries.length:', leaderboardEntries.length);
+  if (leaderboardEntries.length === 0 && offset === 0) {
+    await ctx.reply('Лидерборд пока пуст.');
+    return;
   }
+  let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
+  leaderboardEntries.forEach(([playerId, stats], index) => {
+    const s = stats as typeof stats & { winrate: number };
+    message += `*${offset + index + 1}. ${s.username} (${s.winrate}%)*\n` +
+      `🃏 Игры: ${s.gamesPlayed}\n` +
+      `🏆 Победы: ${s.gamesWon}\n` +
+      `🎖 Голые победы: ${s.golayaCount}\n` +
+      `🥚 Яйца: ${s.eggsCount}\n\n`;
+  });
+  // Navigation buttons
+  const keyboard = [];
+  if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardall:${offset - limit}` });
+  if (leaderboardEntries.length === limit) keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardall:${offset + limit}` });
+  console.log('Leaderboard keyboard:', keyboard);
+  const replyMarkup = { inline_keyboard: [keyboard] };
+  if (isEdit) {
+    console.log('Editing leaderboard message...');
+    await ctx.editMessageText(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  } else {
+    console.log('Sending new leaderboard message...');
+    await ctx.reply(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  }
+}
+
+// Helper to send leaderboard (chat)
+async function sendLeaderboardChat(ctx: any, chatId: number, offset = 0, isEdit = false) {
+  console.log('sendLeaderboardChat called with chatId:', chatId, 'offset:', offset, 'isEdit:', isEdit);
+  const limit = LEADERBOARD_LIMIT;
+  const leaderboardEntries = await statsService.getLeaderboardChat(chatId, offset, limit);
+  console.log('Fetched chat leaderboardEntries.length:', leaderboardEntries.length);
+  if (leaderboardEntries.length === 0 && offset === 0) {
+    await safeSendMessage(ctx, 'Лидерборд для этого чата пока пуст.');
+    return;
+  }
+  let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
+  leaderboardEntries.forEach(([playerId, stats], index) => {
+    const s = stats as typeof stats & { winrate: number };
+    message += `*${offset + index + 1}. ${s.username} (${s.winrate}%)*\n` +
+      `🃏 Игры: ${s.gamesPlayed}\n` +
+      `🏆 Победы: ${s.gamesWon}\n` +
+      `🎖 Голая победа: ${s.golayaCount}\n` +
+      `🥚 Яйца: ${s.eggsCount}\n\n`;
+  });
+  // Navigation buttons
+  const keyboard = [];
+  if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardchat:${offset - limit}` });
+  if (leaderboardEntries.length === limit) keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardchat:${offset + limit}` });
+  console.log('Chat leaderboard keyboard:', keyboard);
+  const replyMarkup = { inline_keyboard: [keyboard] };
+  if (isEdit) {
+    console.log('Editing chat leaderboard message...');
+    await ctx.editMessageText(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  } else {
+    console.log('Sending new chat leaderboard message...');
+    await safeSendMessage(ctx, message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  }
+}
+
+// --- Bot commands ---
+
+bot.command('leaderboardall', async (ctx) => {
+  await sendLeaderboardAll(ctx, 0);
 });
 
 bot.command('leaderboardchat', async (ctx) => {
-  try {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
-    
-    // Используем ChatManager для получения актуального ID чата
-    const actualChatId = chatManager.getActualChatId(chatId);
-    
-    // Проверяем, есть ли сопоставление для этого чата
-    if (chatId !== actualChatId) {
-      console.log(`[MIGRATION] Запрос таблицы лидеров для чата ${chatId}, используя актуальный ID ${actualChatId}`);
-    }
-    
-    const leaderboardEntries = await statsService.getLeaderboardChat(actualChatId);
-    if (leaderboardEntries.length === 0) {
-      await safeSendMessage(ctx, 'Лидерборд для этого чата пока пуст.');
-      return;
-    }
-    let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
-    leaderboardEntries.forEach(([playerId, stats], index) => {
-      message += `${index + 1}. ${stats.username}\n` +
-        `🃏 Игры: ${stats.gamesPlayed}\n` +
-        `🏆 Победы: ${stats.gamesWon}\n` +
-        `🔢 Очки: ${stats.totalScore}\n` +
-        `✂️ Взяток: ${stats.totalTricks}\n` +
-        `🎖 Голая победа: ${stats.golayaCount}\n` +
-        `🥚 Яйца: ${stats.eggsCount}\n\n`;
-    });
-    await safeSendMessage(ctx, message);
-  } catch (error) {
-    console.error('Ошибка при получении лидерборда для чата:', error);
-    // Не выбрасываем ошибку дальше, чтобы не останавливать бота
-  }
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+  const actualChatId = chatManager.getActualChatId(chatId);
+  await sendLeaderboardChat(ctx, actualChatId, 0);
+});
+
+// --- Callback handlers for pagination ---
+bot.action(/leaderboardall:(\d+)/, async (ctx) => {
+  const offset = parseInt(ctx.match[1], 10) || 0;
+  await sendLeaderboardAll(ctx, Math.max(0, offset), true);
+});
+
+bot.action(/leaderboardchat:(\d+)/, async (ctx) => {
+  const offset = parseInt(ctx.match[1], 10) || 0;
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+  const actualChatId = chatManager.getActualChatId(chatId);
+  await sendLeaderboardChat(ctx, actualChatId, Math.max(0, offset), true);
 });
 
 // Обработчик команды /endgame

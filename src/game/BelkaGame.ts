@@ -708,38 +708,33 @@ export class BelkaGame {
         if (this.state.teams.team1.score === 60 && this.state.teams.team2.score === 60) {
             // Устанавливаем флаг переигровки
             this.state.eggsTiebreaker = true;
-            
-            // Обновляем статистику игроков для переигровки "яиц"
-            this.state.players.forEach(player => {
-                this.statsService.updatePlayerStats(
+            // Увеличиваем "яйца" всем игрокам, не увеличивая количество игр
+            for (const player of this.state.players) {
+                await this.statsService.updatePlayerStats(
                     player.id,
                     player.username,
-                    false,
-                    0,
-                    0,
-                    true,
-                    false,
+                    false, // не победа
+                    0,     // очки не важны
+                    0,     // взятки не важны
+                    true,  // isEggs = true
+                    false, // isGolden
                     this.state.chatId
                 );
-            });
-            
+            }
+            // Просто переигрываем раунд
             // Сохраняем козырь текущего раунда для использования в переигровке
             const currentTrump = this.state.trump;
-            
             // Переигрываем ТЕКУЩИЙ раунд
             // Уменьшаем номер раунда на 1, чтобы при увеличении в startNewRound он остался тем же
             this.state.currentRound--;
-            
             // Сбрасываем счет и взятки для переигровки
             this.state.teams.team1.score = 0;
             this.state.teams.team1.tricks = 0;
             this.state.teams.team2.score = 0;
             this.state.teams.team2.tricks = 0;
-            
             // Создаем новую колоду и раздаем карты
             this.state.deck = this.createDeck();
             this.dealCards();
-            
             // Проверяем, нужна ли пересдача
             let needReshuffle = false;
             for (const player of this.state.players) {

@@ -79,7 +79,7 @@ export class StatsService {
         }
     }
 
-    public async getLeaderboardAll(): Promise<[number, PlayerStats][]> {
+    public async getLeaderboardAll(offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number }]>> {
         const client = await pool.connect();
         try {
             const result = await client.query(`
@@ -91,14 +91,16 @@ export class StatsService {
                     g.total_score,
                     g.total_tricks,
                     g.eggs_count,
-                    g.golaya_count
+                    g.golaya_count,
+                    CASE WHEN g.games_played > 0 THEN ROUND((g.games_won::decimal / g.games_played) * 100) ELSE 0 END AS winrate
                 FROM 
                     global_stats g
                 JOIN 
                     players p ON g.player_id = p.player_id
                 ORDER BY 
-                    g.games_won DESC, g.total_score DESC
-            `);
+                    winrate DESC, g.games_won DESC, g.total_score DESC
+                OFFSET $1 LIMIT $2
+            `, [offset, limit]);
 
             return result.rows.map(row => [
                 row.player_id,
@@ -109,7 +111,8 @@ export class StatsService {
                     totalScore: row.total_score,
                     totalTricks: row.total_tricks,
                     eggsCount: row.eggs_count,
-                    golayaCount: row.golaya_count
+                    golayaCount: row.golaya_count,
+                    winrate: Number(row.winrate)
                 }
             ]);
         } catch (error) {
@@ -120,7 +123,7 @@ export class StatsService {
         }
     }
 
-    public async getLeaderboardChat(chatId: number): Promise<[number, PlayerStats][]> {
+    public async getLeaderboardChat(chatId: number, offset = 0, limit = 5): Promise<[number, PlayerStats][]> {
         const client = await pool.connect();
         try {
             const result = await client.query(`
@@ -141,7 +144,8 @@ export class StatsService {
                     c.chat_id = $1
                 ORDER BY 
                     c.games_won DESC, c.total_score DESC
-            `, [chatId]);
+                OFFSET $2 LIMIT $3
+            `, [chatId, offset, limit]);
 
             return result.rows.map(row => [
                 row.player_id,
