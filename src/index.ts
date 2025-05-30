@@ -927,12 +927,11 @@ async function sendLeaderboardChat(ctx: any, chatId: number, offset = 0, isEdit 
   }
   let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
   leaderboardEntries.forEach(([playerId, stats], index) => {
-    const s = stats as typeof stats & { winrate: number };
-    message += `*${offset + index + 1}. ${s.username} (${s.winrate}%)*\n` +
-      `🃏 Игры: ${s.gamesPlayed}\n` +
-      `🏆 Победы: ${s.gamesWon}\n` +
-      `🎖 Голая победа: ${s.golayaCount}\n` +
-      `🥚 Яйца: ${s.eggsCount}\n\n`;
+    message += `*${offset + index + 1}. ${stats.username} (${stats.winrate}%)*\n` +
+      `🃏 Игры: ${stats.gamesPlayed}\n` +
+      `🏆 Победы: ${stats.gamesWon}\n` +
+      `🎖 Голая победа: ${stats.golayaCount}\n` +
+      `🥚 Яйца: ${stats.eggsCount}\n\n`;
   });
   // Navigation buttons
   const keyboard = [];

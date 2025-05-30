@@ -9,7 +9,6 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
     "baseUrl": "./",
     "forceConsistentCasingInFileNames": true,
     "noImplicitOverride": true,
@@ -24,15 +23,8 @@
     "importHelpers": true,
     "useDefineForClassFields": false,
     "lib": [
-      "ES2022",
-      "dom"
+      "ES2022"
     ]
-  },
-  "angularCompilerOptions": {
-    "enableI18nLegacyMessageIdFormat": false,
-    "strictInjectionParameters": true,
-    "strictInputAccessModifiers": true,
-    "strictTemplates": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules"]

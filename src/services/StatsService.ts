@@ -123,7 +123,7 @@ export class StatsService {
         }
     }
 
-    public async getLeaderboardChat(chatId: number, offset = 0, limit = 5): Promise<[number, PlayerStats][]> {
+    public async getLeaderboardChat(chatId: number, offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number }]>> {
         const client = await pool.connect();
         try {
             const result = await client.query(`
@@ -135,7 +135,8 @@ export class StatsService {
                     c.total_score,
                     c.total_tricks,
                     c.eggs_count,
-                    c.golaya_count
+                    c.golaya_count,
+                    CASE WHEN c.games_played > 0 THEN ROUND((c.games_won::decimal / c.games_played) * 100) ELSE 0 END AS winrate
                 FROM 
                     chat_stats c
                 JOIN 
@@ -143,7 +144,7 @@ export class StatsService {
                 WHERE 
                     c.chat_id = $1
                 ORDER BY 
-                    c.games_won DESC, c.total_score DESC
+                    winrate DESC, c.games_won DESC, c.total_score DESC
                 OFFSET $2 LIMIT $3
             `, [chatId, offset, limit]);
 
@@ -156,7 +157,8 @@ export class StatsService {
                     totalScore: row.total_score,
                     totalTricks: row.total_tricks,
                     eggsCount: row.eggs_count,
-                    golayaCount: row.golaya_count
+                    golayaCount: row.golaya_count,
+                    winrate: Number(row.winrate)
                 }
             ]);
         } catch (error) {
