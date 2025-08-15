@@ -486,7 +486,7 @@ var BelkaGame = /** @class */ (function () {
         // Проверка на "яйца" (по 60 очков)
         if (this.state.teams.team1.score === 60 && this.state.teams.team2.score === 60) {
             this.state.players.forEach(function (player) {
-                _this.statsService.updatePlayerStats(player.id, player.username, false, 0, 0, true, false, _this.state.chatId);
+                _this.statsService.updatePlayerStats(player.id, player.username, false, 0, 0, true, false, _this.state.chatId, false);
             });
             // Логика для "яиц" - переигрываем раунд
             this.state.eggsTiebreaker = true; // Устанавливаем флаг переигровки

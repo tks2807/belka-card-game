@@ -346,6 +346,7 @@ bot.telegram.setMyCommands([
     { command: 'join', description: 'Присоединиться к игре' },
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
+      { command: 'time', description: 'Включить автоматические ходы (30 сек)' },
     { command: 'leaderboardall', description: 'Показать глобальную таблицу лидеров' },
     { command: 'leaderboardchat', description: 'Показать таблицу лидеров для текущего чата' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
@@ -522,7 +523,7 @@ bot.start(async (ctx) => {
 
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = chatManager.getActualChatId(chatId);
-        
+
         await safeSendMessage(ctx, 'Добро пожаловать в игру Белка! Используйте /help для получения списка команд.');
     } catch (error) {
         console.error('Ошибка в команде /start:', error);
@@ -544,13 +545,14 @@ bot.help(async (ctx) => {
 Команды:
 /join - Присоединиться к игре
 /startbelka - Начать игру в режиме "Белка" (до 12 глаз)
-/startwalka - Начать игру в режиме "Шалқа" (до 6 глаз) - быстрая игра
+ /startwalka - Начать игру в режиме "Шалқа" (до 6 глаз) - быстрая игра
 /state - Показать текущее состояние игры
+ /time - Включить/выключить автоматические ходы (30 сек)
 /leaderboardall - Показать глобальную таблицу лидеров
-/leaderboardchat - Показать таблицу лидеров для текущего чата
-/endgame - Проголосовать за завершение игры
-/clearbot - Сбросить текущую игру (в случае проблем)
-/warmuty - Показать благодарности участникам проекта
+ /leaderboardchat - Показать таблицу лидеров для текущего чата
+ /endgame - Проголосовать за завершение игры
+ /clearbot - Сбросить текущую игру (в случае проблем)
+ /warmuty - Показать благодарности участникам проекта
 
 Как играть:
 - После начала игры ваши карты автоматически доступны в инлайн-панели
@@ -888,11 +890,11 @@ async function sendLeaderboardAll(ctx: any, offset = 0, isEdit = false) {
   const leaderboardEntries = await statsService.getLeaderboardAll(offset, limit);
   console.log('Fetched leaderboardEntries.length:', leaderboardEntries.length);
   if (leaderboardEntries.length === 0 && offset === 0) {
-    await ctx.reply('Лидерборд пока пуст.');
-    return;
-  }
-  let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
-  leaderboardEntries.forEach(([playerId, stats], index) => {
+      await ctx.reply('Лидерборд пока пуст.');
+      return;
+    }
+    let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
+    leaderboardEntries.forEach(([playerId, stats], index) => {
     const s = stats as typeof stats & { winrate: number };
     message += `*${offset + index + 1}. ${s.username} (${s.winrate}%)*\n` +
       `🃏 Игры: ${s.gamesPlayed}\n` +
@@ -928,11 +930,11 @@ async function sendLeaderboardChat(ctx: any, chatId: number, offset = 0, isEdit 
   let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
   leaderboardEntries.forEach(([playerId, stats], index) => {
     message += `*${offset + index + 1}. ${stats.username} (${stats.winrate}%)*\n` +
-      `🃏 Игры: ${stats.gamesPlayed}\n` +
-      `🏆 Победы: ${stats.gamesWon}\n` +
+        `🃏 Игры: ${stats.gamesPlayed}\n` +
+        `🏆 Победы: ${stats.gamesWon}\n` +
       `🎖 Голая победа: ${stats.golayaCount}\n` +
-      `🥚 Яйца: ${stats.eggsCount}\n\n`;
-  });
+        `🥚 Яйца: ${stats.eggsCount}\n\n`;
+    });
   // Navigation buttons
   const keyboard = [];
   if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardchat:${offset - limit}` });
@@ -955,8 +957,8 @@ bot.command('leaderboardall', async (ctx) => {
 });
 
 bot.command('leaderboardchat', async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
   const actualChatId = chatManager.getActualChatId(chatId);
   await sendLeaderboardChat(ctx, actualChatId, 0);
 });
@@ -971,8 +973,295 @@ bot.action(/leaderboardchat:(\d+)/, async (ctx) => {
   const offset = parseInt(ctx.match[1], 10) || 0;
   const chatId = ctx.chat?.id;
   if (!chatId) return;
-  const actualChatId = chatManager.getActualChatId(chatId);
+    const actualChatId = chatManager.getActualChatId(chatId);
   await sendLeaderboardChat(ctx, actualChatId, Math.max(0, offset), true);
+});
+
+// --- Auto-move system ---
+
+interface GameTimer {
+  chatId: number;
+  playerId: number;
+  timeout: NodeJS.Timeout;
+}
+
+const activeTimers = new Map<number, GameTimer>();
+const MOVE_TIMEOUT = 30000; // 30 секунд
+
+// Функция для установки таймера хода
+function setMoveTimer(chatId: number, playerId: number) {
+  // Очищаем существующий таймер для этого чата
+  clearMoveTimer(chatId);
+  
+  const timeout = setTimeout(async () => {
+    try {
+      console.log(`[TIMER] Время истекло для игрока ${playerId} в чате ${chatId}`);
+      await makeAutoMove(chatId, playerId);
+    } catch (error) {
+      console.error('[TIMER] Ошибка при автоматическом ходе:', error);
+    }
+  }, MOVE_TIMEOUT);
+  
+  activeTimers.set(chatId, { chatId, playerId, timeout });
+  console.log(`[TIMER] Установлен таймер для игрока ${playerId} в чате ${chatId}`);
+}
+
+// Функция для очистки таймера
+function clearMoveTimer(chatId: number) {
+  const timer = activeTimers.get(chatId);
+  if (timer) {
+    clearTimeout(timer.timeout);
+    activeTimers.delete(chatId);
+    console.log(`[TIMER] Таймер очищен для чата ${chatId}`);
+  }
+}
+
+// Функция для автоматического хода
+async function makeAutoMove(chatId: number, playerId: number) {
+  try {
+    const game = games.get(chatId);
+    if (!game) {
+      console.log(`[TIMER] Игра не найдена для чата ${chatId}`);
+      return;
+    }
+    
+    const gameState = game.getGameState();
+    if (!gameState.isActive) {
+      console.log(`[TIMER] Игра неактивна в чате ${chatId}`);
+      return;
+    }
+    
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    if (!currentPlayer || currentPlayer.id !== playerId) {
+      console.log(`[TIMER] Игрок ${playerId} больше не на ходу в чате ${chatId}`);
+      return;
+    }
+    
+    // Находим оптимальную карту для автохода
+    const cardIndex = findOptimalCardForAutoMove(currentPlayer, gameState);
+    if (cardIndex === -1) {
+      console.log(`[TIMER] Не удалось найти карту для автохода игрока ${playerId}`);
+      return;
+    }
+    
+    const selectedCard = currentPlayer.cards[cardIndex];
+    console.log(`[TIMER] Автоматический ход игрока ${currentPlayer.username}: ${selectedCard.suit}${selectedCard.rank}`);
+    
+    // Делаем ход
+    const result = await game.makeMove(playerId, cardIndex);
+    
+    if (result.success) {
+      // Отправляем уведомление об автоматическом ходе
+      const message = `⏰ Время истекло! Автоматический ход игрока ${currentPlayer.username}: ${selectedCard.suit}${selectedCard.rank}`;
+      
+      await bot.telegram.sendMessage(chatId, message);
+      
+      // Обрабатываем результат как обычно
+      if (result.isRoundComplete && result.roundSummary) {
+        await bot.telegram.sendMessage(chatId, result.roundSummary, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+            ]]
+          }
+        });
+        
+        if (result.isGameRoundComplete && result.roundResults) {
+          await bot.telegram.sendMessage(chatId, result.roundResults, {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+              ]]
+            }
+          });
+        }
+      } else {
+        // Устанавливаем таймер для следующего игрока
+        const updatedState = game.getGameState();
+        if (updatedState.isActive) {
+          const nextPlayer = updatedState.players[updatedState.currentPlayerIndex];
+          if (nextPlayer) {
+            setMoveTimer(chatId, nextPlayer.id);
+          }
+        }
+      }
+    }
+    
+    // Очищаем таймер
+    clearMoveTimer(chatId);
+    
+  } catch (error) {
+    console.error('[TIMER] Ошибка при выполнении автоматического хода:', error);
+  }
+}
+
+// Функция для поиска оптимальной карты для автохода
+function findOptimalCardForAutoMove(player: Player, gameState: GameState): number {
+  const cards = player.cards;
+  if (!cards || cards.length === 0) return -1;
+  
+  // Если на столе нет карт, играем минимальную не козырную карту
+  if (gameState.tableCards.length === 0) {
+    // Ищем минимальную не козырную и не валет
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      if (card.suit !== gameState.trump && card.rank !== 'J') {
+        return i;
+      }
+    }
+    // Если только козыри и валеты, берем первую карту
+    return 0;
+  }
+  
+  const firstCard = gameState.tableCards[0].card;
+  const firstCardSuit = firstCard.suit;
+  const isFirstCardTrump = firstCardSuit === gameState.trump || firstCard.rank === 'J';
+  
+  if (isFirstCardTrump) {
+    // Нужно ходить козырем или валетом
+    const trumpCards: { index: number; value: number }[] = [];
+    
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      if (card.suit === gameState.trump || card.rank === 'J') {
+        // Определяем силу карты для сортировки (меньше = слабее)
+        let value = 0;
+        if (card.rank === 'J') {
+          // Валеты: крести=4, пики=3, черви=2, буби=1
+          switch (card.suit) {
+            case '♣': value = 14; break;
+            case '♠': value = 13; break;
+            case '♥': value = 12; break;
+            case '♦': value = 11; break;
+          }
+        } else {
+          // Обычные козыри: 7=1, 8=2, 9=3, Д=4, К=5, 10=6, Т=7
+          switch (card.rank) {
+            case '7': value = 1; break;
+            case '8': value = 2; break;
+            case '9': value = 3; break;
+            case 'Q': value = 4; break;
+            case 'K': value = 5; break;
+            case '10': value = 6; break;
+            case 'A': value = 7; break;
+          }
+        }
+        trumpCards.push({ index: i, value });
+      }
+    }
+    
+    if (trumpCards.length > 0) {
+      // Сортируем по силе (слабые первыми) и возвращаем индекс самой слабой
+      trumpCards.sort((a, b) => a.value - b.value);
+      return trumpCards[0].index;
+    }
+  } else {
+    // Нужно ходить в масть (не валетом)
+    const suitCards: { index: number; value: number }[] = [];
+    
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      if (card.suit === firstCardSuit && card.rank !== 'J') {
+        // Определяем силу карты
+        let value = 0;
+        switch (card.rank) {
+          case '7': value = 1; break;
+          case '8': value = 2; break;
+          case '9': value = 3; break;
+          case 'Q': value = 4; break;
+          case 'K': value = 5; break;
+          case '10': value = 6; break;
+          case 'A': value = 7; break;
+        }
+        suitCards.push({ index: i, value });
+      }
+    }
+    
+    if (suitCards.length > 0) {
+      // Возвращаем самую слабую карту нужной масти
+      suitCards.sort((a, b) => a.value - b.value);
+      return suitCards[0].index;
+    }
+  }
+  
+  // Если подходящих карт нет, ищем любую минимальную карту
+  const otherCards: { index: number; value: number }[] = [];
+  
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    let value = 0;
+    
+    if (card.rank === 'J') {
+      // Валеты в последнюю очередь
+      value = 100;
+    } else if (card.suit === gameState.trump) {
+      // Козыри тоже в последнюю очередь
+      value = 50;
+    } else {
+      // Обычные карты
+      switch (card.rank) {
+        case '7': value = 1; break;
+        case '8': value = 2; break;
+        case '9': value = 3; break;
+        case 'Q': value = 4; break;
+        case 'K': value = 5; break;
+        case '10': value = 6; break;
+        case 'A': value = 7; break;
+      }
+    }
+    
+    otherCards.push({ index: i, value });
+  }
+  
+  if (otherCards.length > 0) {
+    otherCards.sort((a, b) => a.value - b.value);
+    return otherCards[0].index;
+  }
+  
+  // В крайнем случае возвращаем первую карту
+  return 0;
+}
+
+// Команда /time для включения/выключения таймера
+bot.command('time', async (ctx) => {
+  try {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    
+    const actualChatId = chatManager.getActualChatId(chatId);
+    const game = games.get(actualChatId);
+    
+    if (!game) {
+      return await safeSendMessage(ctx, 'В этом чате нет активной игры');
+    }
+    
+    const gameState = game.getGameState();
+    if (!gameState.isActive) {
+      return await safeSendMessage(ctx, 'Игра не начата. Запустите игру командой /startbelka или /startwalka');
+    }
+    
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    if (!currentPlayer) {
+      return await safeSendMessage(ctx, 'Не удалось определить текущего игрока');
+    }
+    
+    // Проверяем, есть ли уже активный таймер
+    const existingTimer = activeTimers.get(actualChatId);
+    
+    if (existingTimer) {
+      clearMoveTimer(actualChatId);
+      await safeSendMessage(ctx, '⏰ Таймер отключен для текущей игры');
+    } else {
+      setMoveTimer(actualChatId, currentPlayer.id);
+      await safeSendMessage(ctx, `⏰ Таймер включен! Игрок ${currentPlayer.username} должен сделать ход в течение 30 секунд, иначе ход будет сделан автоматически`);
+    }
+    
+  } catch (error) {
+    console.error('Ошибка в команде /time:', error);
+    await safeSendMessage(ctx, 'Произошла ошибка при работе с таймером');
+  }
 });
 
 // Обработчик команды /endgame
@@ -1032,6 +1321,11 @@ bot.command('endgame', async (ctx) => {
                     
                     // Удаляем игру из хранилища
                     games.delete(actualChatId);
+                    
+                    // Очищаем таймеры для этого чата
+                    clearMoveTimer(actualChatId);
+                    console.log(`[TIMER] Таймеры очищены после завершения игры голосованием в чате ${actualChatId}`);
+                    
                     await ctx.reply('Игра завершена по голосованию игроков. Используйте /join, чтобы начать новую игру.');
                 }
                 break;
@@ -1083,6 +1377,10 @@ bot.command('clearbot', async (ctx) => {
             if (chatId !== actualChatId) {
                 games.delete(chatId);
             }
+            
+            // Очищаем таймеры для этого чата
+            clearMoveTimer(actualChatId);
+            console.log(`[TIMER] Таймеры очищены для чата ${actualChatId}`);
             
             await ctx.reply('🧹 Игра успешно сброшена. Используйте /join, чтобы начать новую игру.');
         } else {
@@ -1473,6 +1771,9 @@ bot.on(['sticker', 'text'], async (ctx) => {
                 return;
             }
 
+            // Очищаем таймер текущего игрока, так как ход был сделан
+            clearMoveTimer(actualChatId);
+
             // Добавляем подробное логирование
             console.log(`[LOG] isRoundComplete: ${result.isRoundComplete}`);
             console.log(`[LOG] isGameRoundComplete: ${result.isGameRoundComplete}`);
@@ -1532,6 +1833,14 @@ bot.on(['sticker', 'text'], async (ctx) => {
                 // Добавляем информацию о следующем игроке
                 if (newCurrentPlayer) {
                     moveMessage += `\n🎯 Сейчас ход: @${newCurrentPlayer.username}`;
+                    
+                    // Проверяем, включены ли таймеры в этом чате
+                    const hasActiveTimer = activeTimers.has(actualChatId);
+                    if (hasActiveTimer) {
+                        // Устанавливаем таймер для следующего игрока
+                        setMoveTimer(actualChatId, newCurrentPlayer.id);
+                        moveMessage += `\n⏰ У игрока есть 30 секунд на ход`;
+                    }
                 }
 
                 await ctx.reply(moveMessage, {

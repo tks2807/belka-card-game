@@ -7,77 +7,84 @@ export class StatsService {
     }
 
     public async updatePlayerStats(
-        playerId: number,
-        username: string,
-        won: boolean,
-        score: number,
-        tricks: number,
-        eggs: boolean,
-        golaya: boolean,
-        chatId: number
-    ): Promise<void> {
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
+      playerId: number,
+      username: string,
+      won: boolean,
+      score: number,
+      tricks: number,
+      eggs: boolean,
+      golaya: boolean,
+      chatId: number,
+      countGame: boolean = true
+  ): Promise<void> {
+      const client = await pool.connect();
+       const gamesPlayedInc = countGame ? 1 : 0;
+       const gamesWonInc = won ? 1 : 0;
+       const eggsInc = eggs ? 1 : 0;
+       const golayaInc = golaya ? 1 : 0;
+      try {
+          await client.query('BEGIN');
 
-            // Ensure player exists
-            await client.query(
-                'INSERT INTO players (player_id, username) VALUES ($1, $2) ON CONFLICT (player_id) DO UPDATE SET username = $2',
-                [playerId, username]
-            );
+          // Ensure player exists
+          await client.query(
+              'INSERT INTO players (player_id, username) VALUES ($1, $2) ON CONFLICT (player_id) DO UPDATE SET username = $2',
+              [playerId, username]
+          );
 
-            // Update global stats
-            await client.query(`
-                INSERT INTO global_stats 
-                (player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
-                VALUES ($1, 1, $2, $3, $4, $5, $6)
-                ON CONFLICT (player_id) DO UPDATE SET
-                games_played = global_stats.games_played + 1,
-                games_won = global_stats.games_won + $2,
-                total_score = global_stats.total_score + $3,
-                total_tricks = global_stats.total_tricks + $4,
-                eggs_count = global_stats.eggs_count + $5,
-                golaya_count = global_stats.golaya_count + $6
-            `, [
-                playerId,
-                won ? 1 : 0,
-                score,
-                tricks,
-                eggs ? 1 : 0,
-                golaya ? 1 : 0
-            ]);
+          // Update global stats
+          await client.query(`
+              INSERT INTO global_stats 
+              (player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
+              VALUES ($1, 1, $2, $3, $4, $5, $6)
+              ON CONFLICT (player_id) DO UPDATE SET
+              games_played = global_stats.games_played + 1,
+              games_won = global_stats.games_won + $2,
+              total_score = global_stats.total_score + $3,
+              total_tricks = global_stats.total_tricks + $4,
+              eggs_count = global_stats.eggs_count + $5,
+              golaya_count = global_stats.golaya_count + $6
+          `, [
+               playerId,
+               gamesPlayedInc,
+               gamesWonInc,
+               score,
+               tricks,
+               eggsInc,
+               golayaInc
+          ]);
 
-            // Update chat stats
-            await client.query(`
-                INSERT INTO chat_stats 
-                (chat_id, player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
-                VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
-                ON CONFLICT (chat_id, player_id) DO UPDATE SET
-                games_played = chat_stats.games_played + 1,
-                games_won = chat_stats.games_won + $3,
-                total_score = chat_stats.total_score + $4,
-                total_tricks = chat_stats.total_tricks + $5,
-                eggs_count = chat_stats.eggs_count + $6,
-                golaya_count = chat_stats.golaya_count + $7
-            `, [
-                chatId,
-                playerId,
-                won ? 1 : 0,
-                score,
-                tricks,
-                eggs ? 1 : 0,
-                golaya ? 1 : 0
-            ]);
+          // Update chat stats
+          await client.query(`
+              INSERT INTO chat_stats 
+              (chat_id, player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
+              VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
+              ON CONFLICT (chat_id, player_id) DO UPDATE SET
+              games_played = chat_stats.games_played + 1,
+              games_won = chat_stats.games_won + $3,
+              total_score = chat_stats.total_score + $4,
+              total_tricks = chat_stats.total_tricks + $5,
+              eggs_count = chat_stats.eggs_count + $6,
+              golaya_count = chat_stats.golaya_count + $7
+          `, [
+              chatId,
+              playerId,
+              gamesPlayedInc,
+              gamesWonInc,
+              score,
+              tricks,
+              eggsInc,
+              golayaInc
+          ]);
 
-            await client.query('COMMIT');
-        } catch (error) {
-            await client.query('ROLLBACK');
-            console.error('Error updating player stats:', error);
-            throw error;
-        } finally {
-            client.release();
-        }
-    }
+          await client.query('COMMIT');
+      } catch (error) {
+          await client.query('ROLLBACK');
+          console.error('Error updating player stats:', error);
+          throw error;
+      } finally {
+          client.release();
+      }
+  }
 
     public async getLeaderboardAll(offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number }]>> {
         const client = await pool.connect();
