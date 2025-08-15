@@ -346,7 +346,7 @@ bot.telegram.setMyCommands([
     { command: 'join', description: 'Присоединиться к игре' },
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
-      { command: 'time', description: 'Включить автоматические ходы (30 сек)' },
+    //{ command: 'time', description: 'Включить автоматические ходы (30 сек)' },
     { command: 'leaderboardall', description: 'Показать глобальную таблицу лидеров' },
     { command: 'leaderboardchat', description: 'Показать таблицу лидеров для текущего чата' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
@@ -547,7 +547,6 @@ bot.help(async (ctx) => {
 /startbelka - Начать игру в режиме "Белка" (до 12 глаз)
  /startwalka - Начать игру в режиме "Шалқа" (до 6 глаз) - быстрая игра
 /state - Показать текущее состояние игры
- /time - Включить/выключить автоматические ходы (30 сек)
 /leaderboardall - Показать глобальную таблицу лидеров
  /leaderboardchat - Показать таблицу лидеров для текущего чата
  /endgame - Проголосовать за завершение игры
@@ -1225,44 +1224,44 @@ function findOptimalCardForAutoMove(player: Player, gameState: GameState): numbe
 }
 
 // Команда /time для включения/выключения таймера
-bot.command('time', async (ctx) => {
-  try {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
+// bot.command('time', async (ctx) => {
+//   try {
+//     const chatId = ctx.chat?.id;
+//     if (!chatId) return;
     
-    const actualChatId = chatManager.getActualChatId(chatId);
-    const game = games.get(actualChatId);
+//     const actualChatId = chatManager.getActualChatId(chatId);
+//     const game = games.get(actualChatId);
     
-    if (!game) {
-      return await safeSendMessage(ctx, 'В этом чате нет активной игры');
-    }
+//     if (!game) {
+//       return await safeSendMessage(ctx, 'В этом чате нет активной игры');
+//     }
     
-    const gameState = game.getGameState();
-    if (!gameState.isActive) {
-      return await safeSendMessage(ctx, 'Игра не начата. Запустите игру командой /startbelka или /startwalka');
-    }
+//     const gameState = game.getGameState();
+//     if (!gameState.isActive) {
+//       return await safeSendMessage(ctx, 'Игра не начата. Запустите игру командой /startbelka или /startwalka');
+//     }
     
-    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    if (!currentPlayer) {
-      return await safeSendMessage(ctx, 'Не удалось определить текущего игрока');
-    }
+//     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+//     if (!currentPlayer) {
+//       return await safeSendMessage(ctx, 'Не удалось определить текущего игрока');
+//     }
     
-    // Проверяем, есть ли уже активный таймер
-    const existingTimer = activeTimers.get(actualChatId);
+//     // Проверяем, есть ли уже активный таймер
+//     const existingTimer = activeTimers.get(actualChatId);
     
-    if (existingTimer) {
-      clearMoveTimer(actualChatId);
-      await safeSendMessage(ctx, '⏰ Таймер отключен для текущей игры');
-    } else {
-      setMoveTimer(actualChatId, currentPlayer.id);
-      await safeSendMessage(ctx, `⏰ Таймер включен! Игрок ${currentPlayer.username} должен сделать ход в течение 30 секунд, иначе ход будет сделан автоматически`);
-    }
+//     if (existingTimer) {
+//       clearMoveTimer(actualChatId);
+//       await safeSendMessage(ctx, '⏰ Таймер отключен для текущей игры');
+//     } else {
+//       setMoveTimer(actualChatId, currentPlayer.id);
+//       await safeSendMessage(ctx, `⏰ Таймер включен! Игрок ${currentPlayer.username} должен сделать ход в течение 30 секунд, иначе ход будет сделан автоматически`);
+//     }
     
-  } catch (error) {
-    console.error('Ошибка в команде /time:', error);
-    await safeSendMessage(ctx, 'Произошла ошибка при работе с таймером');
-  }
-});
+//   } catch (error) {
+//     console.error('Ошибка в команде /time:', error);
+//     await safeSendMessage(ctx, 'Произошла ошибка при работе с таймером');
+//   }
+// });
 
 // Обработчик команды /endgame
 bot.command('endgame', async (ctx) => {
