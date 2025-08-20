@@ -1,6 +1,7 @@
 import { Card, Player, CardSuit, CardRank, TableCard } from '../types/game.types';
 import { StatsService } from '../services/StatsService';
 import { MoveResult } from '../types/game.types';
+import * as crypto from 'crypto';
 
 // Перемещаем интерфейс GameState в отдельный файл types/game.types.ts
 // и расширяем его здесь для внутреннего использования
@@ -96,11 +97,46 @@ export class BelkaGame {
     }
 
     private shuffleDeck(deck: Card[]): Card[] {
-        for (let i = deck.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [deck[i], deck[j]] = [deck[j], deck[i]];
+        // Создаем копию массива для безопасности
+        const shuffled = [...deck];
+        
+        // Выполняем несколько проходов перемешивания для лучшей рандомизации
+        for (let pass = 0; pass < 3; pass++) {
+            // Современный алгоритм Fisher-Yates (Knuth shuffle)
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                // Используем crypto.getRandomValues для лучшей рандомности (если доступно)
+                const j = this.getSecureRandomInt(i + 1);
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
         }
-        return deck;
+        
+        // Дополнительное перемешивание методом "разрезания колоды"
+        const cutPosition = this.getSecureRandomInt(shuffled.length);
+        const firstHalf = shuffled.slice(0, cutPosition);
+        const secondHalf = shuffled.slice(cutPosition);
+        
+        return [...secondHalf, ...firstHalf];
+    }
+    
+    // Генерация криптографически стойкого случайного числа
+    private getSecureRandomInt(max: number): number {
+        try {
+            // Используем Node.js crypto для лучшей рандомности
+            const randomBytes = crypto.randomBytes(4);
+            const randomInt = randomBytes.readUInt32BE(0);
+            return randomInt % max;
+        } catch (error) {
+            // Fallback на улучшенный Math.random()
+            let random = Math.random();
+            
+            // Добавляем дополнительную энтропию из времени и процесса
+            const timeEntropy = (Date.now() % 1000) / 1000;
+            const processEntropy = Number(process.hrtime.bigint() % 1000n) / 1000;
+            
+            random = (random + timeEntropy + processEntropy) % 1;
+            
+            return Math.floor(random * max);
+        }
     }
 
     private selectTrump(): CardSuit {
@@ -718,7 +754,8 @@ export class BelkaGame {
                     0,     // взятки не важны
                     true,  // isEggs = true
                     false, // isGolden
-                    this.state.chatId
+                    this.state.chatId,
+                    false
                 );
             }
             // Просто переигрываем раунд
@@ -968,7 +1005,8 @@ export class BelkaGame {
                     player.tricks || 0,
                     false,
                     isGolden,
-                    this.state.chatId
+                    this.state.chatId,
+                    true
                 );
             }
 
@@ -982,7 +1020,8 @@ export class BelkaGame {
                     player.tricks || 0,
                     false,
                     false,
-                    this.state.chatId
+                    this.state.chatId,
+                    true
                 );
             }
 
