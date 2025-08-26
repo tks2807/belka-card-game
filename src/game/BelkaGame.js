@@ -670,8 +670,6 @@ class BelkaGame {
                 this.state.teams.team2.eyes += 4;
                 team2Eyes = 4;
             }
-            // Сбрасываем флаг переигровки
-            this.state.eggsTiebreaker = false;
         }
         else {
             // После 1-го раунда выигравшей команде всегда 2 глаза
@@ -706,7 +704,7 @@ class BelkaGame {
             }
         }
         // Проверяем, у кого валет крести и добавляем дополнительный глаз (только не в первом раунде)
-        if (this.state.clubJackHolder && this.state.currentRound > 1) {
+        if (this.state.clubJackHolder && this.state.currentRound > 1 && !this.state.eggsTiebreaker) {
             const isClubJackInTeam1 = this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder.id);
             // Если валет крести у команды 2, а выиграла команда 1
             if (!isClubJackInTeam1 && team1Won) {
@@ -719,6 +717,7 @@ class BelkaGame {
                 team2Eyes += 1;
             }
         }
+        this.state.eggsTiebreaker = false; // Сбрасываем флаг переигровки, если он был установлен
         // Формируем сообщение с результатами раунда
         let results = `📊 Результаты раунда ${this.state.currentRound}:\n\n`;
         // Добавляем информацию о победителе раунда
