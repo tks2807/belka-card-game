@@ -35,14 +35,14 @@ export class StatsService {
           await client.query(`
               INSERT INTO global_stats 
               (player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
-              VALUES ($1, 1, $2, $3, $4, $5, $6)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)
               ON CONFLICT (player_id) DO UPDATE SET
-              games_played = global_stats.games_played + 1,
-              games_won = global_stats.games_won + $2,
-              total_score = global_stats.total_score + $3,
-              total_tricks = global_stats.total_tricks + $4,
-              eggs_count = global_stats.eggs_count + $5,
-              golaya_count = global_stats.golaya_count + $6
+              games_played = global_stats.games_played + $2,
+              games_won = global_stats.games_won + $3,
+              total_score = global_stats.total_score + $4,
+              total_tricks = global_stats.total_tricks + $5,
+              eggs_count = global_stats.eggs_count + $6,
+              golaya_count = global_stats.golaya_count + $7
           `, [
                playerId,
                gamesPlayedInc,
@@ -57,14 +57,14 @@ export class StatsService {
           await client.query(`
               INSERT INTO chat_stats 
               (chat_id, player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
-              VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
               ON CONFLICT (chat_id, player_id) DO UPDATE SET
-              games_played = chat_stats.games_played + 1,
-              games_won = chat_stats.games_won + $3,
-              total_score = chat_stats.total_score + $4,
-              total_tricks = chat_stats.total_tricks + $5,
-              eggs_count = chat_stats.eggs_count + $6,
-              golaya_count = chat_stats.golaya_count + $7
+              games_played = chat_stats.games_played + $3,
+              games_won = chat_stats.games_won + $4,
+              total_score = chat_stats.total_score + $5,
+              total_tricks = chat_stats.total_tricks + $6,
+              eggs_count = chat_stats.eggs_count + $7,
+              golaya_count = chat_stats.golaya_count + $8
           `, [
               chatId,
               playerId,
