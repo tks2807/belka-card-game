@@ -43,3 +43,19 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Bot specific
+/data/*
+!/data/.gitkeep
+/logs/*
+!/logs/.gitkeep
+
+# Backup files
+/backups/*
+
+# Prevent JS files in root (should be in src/)
+/*.js
+!/src/**/*.js
+
+# Docker volumes
+docker-data/

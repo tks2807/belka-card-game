@@ -547,11 +547,17 @@ bot.help(async (ctx) => {
 /startbelka - Начать игру в режиме "Белка" (до 12 глаз)
  /startwalka - Начать игру в режиме "Шалқа" (до 6 глаз) - быстрая игра
 /state - Показать текущее состояние игры
-/leaderboardall - Показать глобальную таблицу лидеров
- /leaderboardchat - Показать таблицу лидеров для текущего чата
- /endgame - Проголосовать за завершение игры
- /clearbot - Сбросить текущую игру (в случае проблем)
- /warmuty - Показать благодарности участникам проекта
+
+📊 Рейтинг и статистика:
+/rating - Справедливый рейтинг (все чаты) ⭐ РЕКОМЕНДУЕТСЯ
+/ratingchat - Справедливый рейтинг (этот чат) ⭐ РЕКОМЕНДУЕТСЯ
+/leaderboardall - Простая таблица лидеров (все чаты)
+/leaderboardchat - Простая таблица лидеров (этот чат)
+
+🎮 Управление игрой:
+/endgame - Проголосовать за завершение игры
+/clearbot - Сбросить текущую игру (в случае проблем)
+/warmuty - Показать благодарности участникам проекта
 
 Как играть:
 - После начала игры ваши карты автоматически доступны в инлайн-панели
@@ -882,7 +888,7 @@ const statsService = new StatsService();
 
 const LEADERBOARD_LIMIT = 4;
 
-// Helper to send leaderboard (all)
+// Helper to send leaderboard (all) - старая версия
 async function sendLeaderboardAll(ctx: any, offset = 0, isEdit = false) {
   console.log('sendLeaderboardAll called with offset:', offset, 'isEdit:', isEdit);
   const limit = LEADERBOARD_LIMIT;
@@ -916,7 +922,50 @@ async function sendLeaderboardAll(ctx: any, offset = 0, isEdit = false) {
   }
 }
 
-// Helper to send leaderboard (chat)
+// Helper to send improved leaderboard (all) - новая версия с комплексным рейтингом
+async function sendLeaderboardAllImproved(ctx: any, offset = 0, isEdit = false) {
+  console.log('sendLeaderboardAllImproved called with offset:', offset, 'isEdit:', isEdit);
+  const limit = LEADERBOARD_LIMIT;
+  const leaderboardEntries = await statsService.getLeaderboardAllImproved(offset, limit);
+  console.log('Fetched improved leaderboardEntries.length:', leaderboardEntries.length);
+  if (leaderboardEntries.length === 0 && offset === 0) {
+      await ctx.reply('Рейтинговый лидерборд пока пуст. Для участия в рейтинге нужно сыграть минимум 5 игр.');
+      return;
+    }
+    let message = '🏆 Рейтинговая таблица лидеров (все чаты) 🏆\n\n';
+    leaderboardEntries.forEach(([playerId, stats], index) => {
+    const s = stats as typeof stats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number };
+    const position = offset + index + 1;
+    const ratingDisplay = s.isQualified ? `🏅 ${s.eloRating} ELO` : `${s.winrate}% (${s.gamesPlayed} игр)`;
+    const statusIcon = s.isQualified ? '🎯' : '🎲';
+    
+    message += `*${position}. ${s.username}* ${statusIcon}\n` +
+      `📊 Рейтинг: ${ratingDisplay}\n` +
+      `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
+      `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+  });
+  
+  message += '💡 *Легенда:*\n';
+  message += '🎯 - Квалифицированный игрок (5+ игр) - ELO рейтинг\n';
+  message += '🎲 - Новичок (менее 5 игр) - процент побед\n';
+  message += '🏅 - Гибридный рейтинг: ELO + качество игры\n\n';
+  
+  // Navigation buttons
+  const keyboard = [];
+  if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardallimproved:${offset - limit}` });
+  if (leaderboardEntries.length === limit) keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardallimproved:${offset + limit}` });
+  console.log('Improved leaderboard keyboard:', keyboard);
+  const replyMarkup = { inline_keyboard: [keyboard] };
+  if (isEdit) {
+    console.log('Editing improved leaderboard message...');
+    await ctx.editMessageText(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  } else {
+    console.log('Sending new improved leaderboard message...');
+    await ctx.reply(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  }
+}
+
+// Helper to send leaderboard (chat) - старая версия
 async function sendLeaderboardChat(ctx: any, chatId: number, offset = 0, isEdit = false) {
   console.log('sendLeaderboardChat called with chatId:', chatId, 'offset:', offset, 'isEdit:', isEdit);
   const limit = LEADERBOARD_LIMIT;
@@ -949,8 +998,52 @@ async function sendLeaderboardChat(ctx: any, chatId: number, offset = 0, isEdit 
   }
 }
 
+// Helper to send improved leaderboard (chat) - новая версия с комплексным рейтингом
+async function sendLeaderboardChatImproved(ctx: any, chatId: number, offset = 0, isEdit = false) {
+  console.log('sendLeaderboardChatImproved called with chatId:', chatId, 'offset:', offset, 'isEdit:', isEdit);
+  const limit = LEADERBOARD_LIMIT;
+  const leaderboardEntries = await statsService.getLeaderboardChatImproved(chatId, offset, limit);
+  console.log('Fetched improved chat leaderboardEntries.length:', leaderboardEntries.length);
+  if (leaderboardEntries.length === 0 && offset === 0) {
+    await safeSendMessage(ctx, 'Рейтинговый лидерборд для этого чата пока пуст. Для участия в рейтинге нужно сыграть минимум 5 игр.');
+    return;
+  }
+  let message = '🏆 Рейтинговая таблица лидеров (этот чат) 🏆\n\n';
+  leaderboardEntries.forEach(([playerId, stats], index) => {
+    const s = stats as typeof stats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number };
+    const position = offset + index + 1;
+    const ratingDisplay = s.isQualified ? `🏅 ${s.eloRating} ELO` : `${s.winrate}% (${s.gamesPlayed} игр)`;
+    const statusIcon = s.isQualified ? '🎯' : '🎲';
+    
+    message += `*${position}. ${s.username}* ${statusIcon}\n` +
+      `📊 Рейтинг: ${ratingDisplay}\n` +
+      `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
+      `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+    });
+    
+  message += '💡 *Легенда:*\n';
+  message += '🎯 - Квалифицированный игрок (5+ игр) - ELO рейтинг\n';
+  message += '🎲 - Новичок (менее 5 игр) - процент побед\n';
+  message += '🏅 - Гибридный рейтинг: ELO + качество игры\n\n';
+  
+  // Navigation buttons
+  const keyboard = [];
+  if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardchatimproved:${offset - limit}` });
+  if (leaderboardEntries.length === limit) keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardchatimproved:${offset + limit}` });
+  console.log('Improved chat leaderboard keyboard:', keyboard);
+  const replyMarkup = { inline_keyboard: [keyboard] };
+  if (isEdit) {
+    console.log('Editing improved chat leaderboard message...');
+    await ctx.editMessageText(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  } else {
+    console.log('Sending new improved chat leaderboard message...');
+    await safeSendMessage(ctx, message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
+  }
+}
+
 // --- Bot commands ---
 
+// Старые команды (простой винрейт)
 bot.command('leaderboardall', async (ctx) => {
   await sendLeaderboardAll(ctx, 0);
 });
@@ -960,6 +1053,22 @@ bot.command('leaderboardchat', async (ctx) => {
     if (!chatId) return;
   const actualChatId = chatManager.getActualChatId(chatId);
   await sendLeaderboardChat(ctx, actualChatId, 0);
+});
+
+// Новые команды (комплексный рейтинг)
+bot.command('rating', async (ctx) => {
+  await sendLeaderboardAllImproved(ctx, 0);
+});
+
+bot.command('ratingall', async (ctx) => {
+  await sendLeaderboardAllImproved(ctx, 0);
+});
+
+bot.command('ratingchat', async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+  const actualChatId = chatManager.getActualChatId(chatId);
+  await sendLeaderboardChatImproved(ctx, actualChatId, 0);
 });
 
 // --- Callback handlers for pagination ---
@@ -974,6 +1083,20 @@ bot.action(/leaderboardchat:(\d+)/, async (ctx) => {
   if (!chatId) return;
     const actualChatId = chatManager.getActualChatId(chatId);
   await sendLeaderboardChat(ctx, actualChatId, Math.max(0, offset), true);
+});
+
+// Новые обработчики пагинации для улучшенного лидерборда
+bot.action(/leaderboardallimproved:(\d+)/, async (ctx) => {
+  const offset = parseInt(ctx.match[1], 10) || 0;
+  await sendLeaderboardAllImproved(ctx, Math.max(0, offset), true);
+});
+
+bot.action(/leaderboardchatimproved:(\d+)/, async (ctx) => {
+  const offset = parseInt(ctx.match[1], 10) || 0;
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+    const actualChatId = chatManager.getActualChatId(chatId);
+  await sendLeaderboardChatImproved(ctx, actualChatId, Math.max(0, offset), true);
 });
 
 // --- Auto-move system ---

@@ -988,6 +988,15 @@ export class BelkaGame {
         const losers = winningTeam === 1 ? this.state.teams.team2.players : this.state.teams.team1.players;
 
         try {
+            // Получаем ELO рейтинги всех игроков для расчета изменений
+            const allPlayers = [...this.state.teams.team1.players, ...this.state.teams.team2.players];
+            const playerELOs = new Map<number, number>();
+            
+            for (const player of allPlayers) {
+                const elo = await this.statsService.getPlayerELO(player.id);
+                playerELOs.set(player.id, elo);
+            }
+
             // Обновляем статистику для победителей
             for (const player of winners) {
                 await this.statsService.updatePlayerStats(
@@ -1000,6 +1009,25 @@ export class BelkaGame {
                     isGolden,
                     this.state.chatId,
                     true
+                );
+
+                // Обновляем ELO с учетом противников
+                const teammate = winners.find(p => p.id !== player.id);
+                const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
+                const opponent1ELO = playerELOs.get(losers[0].id) || 1000;
+                const opponent2ELO = playerELOs.get(losers[1].id) || 1000;
+
+                await this.statsService.updateHybridRating(
+                    player.id,
+                    player.username,
+                    true,
+                    winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
+                    player.tricks || 0,
+                    isGolden,
+                    teammateELO,
+                    opponent1ELO,
+                    opponent2ELO,
+                    this.state.chatId
                 );
             }
 
@@ -1015,6 +1043,25 @@ export class BelkaGame {
                     false,
                     this.state.chatId,
                     true
+                );
+
+                // Обновляем ELO с учетом противников
+                const teammate = losers.find(p => p.id !== player.id);
+                const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
+                const opponent1ELO = playerELOs.get(winners[0].id) || 1000;
+                const opponent2ELO = playerELOs.get(winners[1].id) || 1000;
+
+                await this.statsService.updateHybridRating(
+                    player.id,
+                    player.username,
+                    false,
+                    winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
+                    player.tricks || 0,
+                    false,
+                    teammateELO,
+                    opponent1ELO,
+                    opponent2ELO,
+                    this.state.chatId
                 );
             }
 

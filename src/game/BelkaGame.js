@@ -1,9 +1,19 @@
 "use strict";
+var __rest = (this && this.__rest) || function (s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+                t[p[i]] = s[p[i]];
+        }
+    return t;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BelkaGame = void 0;
-const tslib_1 = require("tslib");
 const StatsService_1 = require("../services/StatsService");
-const crypto = tslib_1.__importStar(require("crypto"));
+const crypto = require("crypto");
 class BelkaGame {
     constructor(chatId) {
         this.statsService = new StatsService_1.StatsService();
@@ -114,13 +124,7 @@ class BelkaGame {
         if (this.state.isActive || this.state.players.length >= 4) {
             return false;
         }
-        const newPlayer = {
-            ...player,
-            cards: [],
-            score: 0,
-            tricks: 0,
-            chatId: this.state.chatId
-        };
+        const newPlayer = Object.assign(Object.assign({}, player), { cards: [], score: 0, tricks: 0, chatId: this.state.chatId });
         this.state.players.push(newPlayer);
         // Распределяем игроков по командам
         if (this.state.players.length === 1 || this.state.players.length === 3) {
@@ -132,6 +136,7 @@ class BelkaGame {
         return true;
     }
     startGame(mode = 'belka') {
+        var _a;
         if (this.state.isActive) {
             return "Игра уже запущена!";
         }
@@ -182,7 +187,7 @@ class BelkaGame {
         this.setupPlayerSuitMap();
         // Определяем козырь для первого раунда (всегда крести)
         this.state.trump = '♣';
-        console.log(`[LOG] Инициализация игры завершена. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
+        console.log(`[LOG] Инициализация игры завершена. Козырь: ${this.state.trump}, держатель валета крести: ${((_a = this.state.clubJackHolder) === null || _a === void 0 ? void 0 : _a.username) || 'не найден'}`);
         // Возвращаем информацию о начальном состоянии игры
         return this.getGameSummary();
     }
@@ -507,6 +512,7 @@ class BelkaGame {
         return points;
     }
     startNewRound() {
+        var _a;
         // Увеличиваем номер раунда
         this.state.currentRound++;
         console.log(`[LOG] Начинается раунд ${this.state.currentRound}`);
@@ -554,7 +560,7 @@ class BelkaGame {
         }
         // Определяем козырь для нового раунда
         this.determineNewTrump();
-        console.log(`[LOG] Раунд ${this.state.currentRound} инициализирован. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
+        console.log(`[LOG] Раунд ${this.state.currentRound} инициализирован. Козырь: ${this.state.trump}, держатель валета крести: ${((_a = this.state.clubJackHolder) === null || _a === void 0 ? void 0 : _a.username) || 'не найден'}`);
     }
     determineNewTrump() {
         // Находим игрока с валетом крести
@@ -832,13 +838,60 @@ class BelkaGame {
         const winners = winningTeam === 1 ? this.state.teams.team1.players : this.state.teams.team2.players;
         const losers = winningTeam === 1 ? this.state.teams.team2.players : this.state.teams.team1.players;
         try {
+            // Получаем ELO рейтинги всех игроков для расчета изменений
+            const allPlayers = [...this.state.teams.team1.players, ...this.state.teams.team2.players];
+            const playerELOs = new Map();
+            
+            for (const player of allPlayers) {
+                const elo = await this.statsService.getPlayerELO(player.id);
+                playerELOs.set(player.id, elo);
+            }
+
             // Обновляем статистику для победителей
             for (const player of winners) {
                 await this.statsService.updatePlayerStats(player.id, player.username, true, winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score, player.tricks || 0, false, isGolden, this.state.chatId, true);
+                
+                // Обновляем ELO с учетом противников
+                const teammate = winners.find(p => p.id !== player.id);
+                const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
+                const opponent1ELO = playerELOs.get(losers[0].id) || 1000;
+                const opponent2ELO = playerELOs.get(losers[1].id) || 1000;
+
+                await this.statsService.updateHybridRating(
+                    player.id,
+                    player.username,
+                    true,
+                    winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
+                    player.tricks || 0,
+                    isGolden,
+                    teammateELO,
+                    opponent1ELO,
+                    opponent2ELO,
+                    this.state.chatId
+                );
             }
             // Обновляем статистику для проигравших
             for (const player of losers) {
                 await this.statsService.updatePlayerStats(player.id, player.username, false, winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score, player.tricks || 0, false, false, this.state.chatId, true);
+                
+                // Обновляем ELO с учетом противников
+                const teammate = losers.find(p => p.id !== player.id);
+                const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
+                const opponent1ELO = playerELOs.get(winners[0].id) || 1000;
+                const opponent2ELO = playerELOs.get(winners[1].id) || 1000;
+
+                await this.statsService.updateHybridRating(
+                    player.id,
+                    player.username,
+                    false,
+                    winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
+                    player.tricks || 0,
+                    false,
+                    teammateELO,
+                    opponent1ELO,
+                    opponent2ELO,
+                    this.state.chatId
+                );
             }
             if (isGolden) {
                 this.state.clubJackHolder = winners[0];
@@ -850,7 +903,7 @@ class BelkaGame {
     }
     getGameState() {
         // Возвращаем состояние игры без внутренних полей
-        const { endVotes, ...gameState } = this.state;
+        const _a = this.state, { endVotes } = _a, gameState = __rest(_a, ["endVotes"]);
         return gameState;
     }
     getGameSummary() {
@@ -1011,4 +1064,3 @@ class BelkaGame {
     }
 }
 exports.BelkaGame = BelkaGame;
-//# sourceMappingURL=BelkaGame.js.map

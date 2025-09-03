@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS global_stats (
   total_score INTEGER DEFAULT 0,
   total_tricks INTEGER DEFAULT 0,
   eggs_count INTEGER DEFAULT 0,
-  golaya_count INTEGER DEFAULT 0
+  golaya_count INTEGER DEFAULT 0,
+  elo_rating INTEGER DEFAULT 1000
 );
 
 -- Create table for chat-specific stats
@@ -26,5 +27,6 @@ CREATE TABLE IF NOT EXISTS chat_stats (
   total_tricks INTEGER DEFAULT 0,
   eggs_count INTEGER DEFAULT 0,
   golaya_count INTEGER DEFAULT 0,
+  elo_rating INTEGER DEFAULT 1000,
   UNIQUE(chat_id, player_id)
 ); 

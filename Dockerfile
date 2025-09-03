@@ -18,11 +18,11 @@ RUN npm install --save https-proxy-agent proxy-agent node-fetch@2 socks-proxy-ag
 # Create necessary directories
 RUN mkdir -p data logs dist
 
-# Copy TypeScript configs
+# Copy source code and configuration files
+COPY src/ ./src/
 COPY tsconfig*.json ./
-
-# Copy the rest of the application
-COPY . .
+COPY package*.json ./
+COPY docker/ ./docker/
 
 # Build the application
 RUN npm run build
