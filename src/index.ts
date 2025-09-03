@@ -273,6 +273,9 @@ const games = new Map<number, BelkaGame>();
 // Хранилище информации о картах игроков в личных чатах
 const playerCardsInPrivateChat = new Map<number, { cards: Card[], gameId: number }>();
 
+// Хранилище ID сообщений для каждого раунда игры (chatId -> messageId)
+const roundMessages = new Map<number, number>();
+
 // Интерфейс для группировки карт по масти
 interface CardsBySuit {
     [suit: string]: Card[] | undefined;
@@ -744,6 +747,9 @@ bot.command('startbelka', async (ctx) => {
         // Запускаем игру в режиме "белка" (до 12 глаз)
         const gameSummary = game.startGame('belka');
         
+        // Очищаем сообщения предыдущих раундов при новой игре
+        roundMessages.delete(actualChatId);
+        
         // Получаем обновленное состояние игры
         const updatedState = game.getGameState();
         
@@ -755,6 +761,22 @@ bot.command('startbelka', async (ctx) => {
                 gameId: actualChatId
             });
         });
+        
+        // Отправляем карты каждому игроку в личные сообщения
+        for (const player of updatedState.players) {
+            try {
+                // Отправляем карты игроку через sendPlayerCardsAsStickers
+                await sendPlayerCardsAsStickers({ 
+                    reply: (text: string) => bot.telegram.sendMessage(player.id, text),
+                    replyWithSticker: (stickerId: string) => bot.telegram.sendSticker(player.id, stickerId),
+                    chat: { id: player.id }
+                } as any, player, updatedState);
+                console.log(`[LOG] Карты отправлены игроку ${player.username} (ID: ${player.id})`);
+            } catch (error) {
+                console.error(`[LOG] Ошибка при отправке карт игроку ${player.username}:`, error);
+                // Если не удалось отправить в личку, игрок все равно может использовать inline режим
+            }
+        }
         
         // Отправляем информацию о начальном состоянии игры в чат
         await safeSendMessage(ctx, gameSummary, {
@@ -812,6 +834,9 @@ bot.command('startwalka', async (ctx) => {
         
         // Запускаем игру в режиме "Шалқа" (до 6 глаз)
         const gameSummary = game.startGame('walka');
+        
+        // Очищаем сообщения предыдущих раундов при новой игре
+        roundMessages.delete(actualChatId);
         
         // Получаем обновленное состояние игры
         const updatedState = game.getGameState();
@@ -1939,16 +1964,20 @@ bot.on(['sticker', 'text'], async (ctx) => {
 
             // Отправляем сообщение о ходе только если раунд не завершен
             if (!result.isRoundComplete) {
-                // Формируем сообщение о ходе в новом формате
-                let moveMessage = '🎮 На столе:\n';
+                // Формируем сообщение о ходе с шифрованными эмодзи
+                let moveMessage = `🎮 Раунд ${updatedState.currentRound}\n`;
+                moveMessage += 'На столе:\n';
+                
                 updatedState.tableCards.forEach(tableCard => {
                     if (!tableCard) return; // Пропускаем, если карта не определена
                     
                     const player = updatedState.players.find(p => p && p.id === tableCard.playerId);
                     if (player) {
-                        moveMessage += `${player.username}: ${tableCard.card.suit}${tableCard.card.rank}\n`;
+                        // Получаем зашифрованное эмодзи для карты
+                        const encryptedEmoji = game?.getEmojiForCard(tableCard.card) || '🃏';
+                        moveMessage += `${player.username}: ${encryptedEmoji}\n`;
                     } else {
-                        moveMessage += `Неизвестный игрок: ${tableCard.card.suit}${tableCard.card.rank}\n`;
+                        moveMessage += `Неизвестный игрок: 🃏\n`;
                     }
                 });
 
@@ -1965,13 +1994,54 @@ bot.on(['sticker', 'text'], async (ctx) => {
                     }
                 }
 
-                await ctx.reply(moveMessage, {
-                  reply_markup: {
-                      inline_keyboard: [[
-                          { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
-                      ]]
-                  }
-                });
+                // Проверяем, есть ли уже сообщение для этого раунда
+                const existingMessageId = roundMessages.get(actualChatId);
+                
+                if (existingMessageId) {
+                    // Редактируем существующее сообщение
+                    try {
+                        await bot.telegram.editMessageText(
+                            actualChatId,
+                            existingMessageId,
+                            undefined,
+                            moveMessage,
+                            {
+                                reply_markup: {
+                                    inline_keyboard: [[
+                                        { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                                    ]]
+                                }
+                            }
+                        );
+                        console.log(`[EMOJI] Сообщение раунда обновлено с зашифрованными эмодзи`);
+                    } catch (editError) {
+                        console.error('[EMOJI] Ошибка при редактировании сообщения:', editError);
+                        // Если не удалось отредактировать, отправляем новое
+                        const sentMessage = await ctx.reply(moveMessage, {
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                                ]]
+                            }
+                        });
+                        roundMessages.set(actualChatId, sentMessage.message_id);
+                    }
+                } else {
+                    // Отправляем новое сообщение для нового раунда
+                    const sentMessage = await ctx.reply(moveMessage, {
+                        reply_markup: {
+                            inline_keyboard: [[
+                                { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                            ]]
+                        }
+                    });
+                    roundMessages.set(actualChatId, sentMessage.message_id);
+                    console.log(`[EMOJI] Создано новое сообщение раунда с зашифрованными эмодзи`);
+                }
+            } else {
+                // Раунд завершен, очищаем ID сообщения для следующего раунда
+                roundMessages.delete(actualChatId);
+                console.log(`[EMOJI] Раунд завершен, очищено сообщение для чата ${actualChatId}`);
             }
 
             // Обновляем карты в хранилище для всех игроков

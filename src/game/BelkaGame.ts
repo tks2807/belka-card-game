@@ -36,6 +36,7 @@ interface ExtendedGameState {
     hideClubJackHolder: boolean;
     eggsTiebreaker: boolean;
     gameMode: 'belka' | 'walka'; // Режим игры: "белка" до 12 глаз или "Шалқа" до 6 глаз
+    emojiMapping: Map<string, string>; // Шифрование карт в эмодзи для текущего раунда
 }
 
 export class BelkaGame {
@@ -74,7 +75,8 @@ export class BelkaGame {
             playerSuitMap: new Map(),
             hideClubJackHolder: true,
             eggsTiebreaker: false,
-            gameMode: 'belka' // По умолчанию режим "белка"
+            gameMode: 'belka', // По умолчанию режим "белка"
+            emojiMapping: new Map() // Инициализируем пустой Map
         };
     }
 
@@ -158,6 +160,65 @@ export class BelkaGame {
         // Для остальных карт
         const baseValue = card.value;
         return card.suit === this.state.trump ? baseValue + 100 : baseValue;
+    }
+
+    // Методы для шифрования карт в эмодзи
+    private generateEmojiMapping(): void {
+        // Пул эмодзи для шифрования карт
+        const emojiPool = [
+            '🤡', '😈', '😎', '🤓', '😄', '😁', '😆', '😅',
+            '😉', '😊', '🙂', '🙃', '😌', '😍', '🥰', '😘',
+            '😗', '😙', '😚', '😋', '😛', '😝', '🤪', '😐',
+            '😑', '😶', '😏', '😒', '🙄', '😬', '😤', '😠',
+            '😀', '😱', '😵', '😴'
+        ];
+
+        // Все карты в колоде
+        const suits: CardSuit[] = ['♠', '♣', '♦', '♥'];
+        const ranks: CardRank[] = ['7', '8', '9', 'Q', 'K', '10', 'A', 'J'];
+        const allCards: string[] = [];
+        
+        suits.forEach(suit => {
+            ranks.forEach(rank => {
+                allCards.push(`${suit}${rank}`);
+            });
+        });
+
+        // Очищаем предыдущую карту шифрования
+        this.state.emojiMapping.clear();
+
+        // Создаем сид на основе раунда и ID чата
+        const seed = this.state.currentRound * 1000 + (this.state.chatId % 10000);
+        
+        // Перемешиваем эмодзи на основе сида
+        const shuffledEmojis = this.shuffleArrayWithSeed([...emojiPool], seed);
+        
+        // Привязываем каждую карту к эмодзи
+        allCards.forEach((card, index) => {
+            const emojiIndex = index % shuffledEmojis.length;
+            this.state.emojiMapping.set(card, shuffledEmojis[emojiIndex]);
+        });
+
+        console.log(`[EMOJI] Генерация нового шифрования для раунда ${this.state.currentRound}`);
+    }
+
+    private shuffleArrayWithSeed<T>(array: T[], seed: number): T[] {
+        const shuffled = [...array];
+        let currentSeed = seed;
+        
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            // Простой линейный конгруэнтный генератор для предсказуемого перемешивания
+            currentSeed = (currentSeed * 9301 + 49297) % 233280;
+            const j = Math.floor((currentSeed / 233280) * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        
+        return shuffled;
+    }
+
+    public getEmojiForCard(card: Card): string {
+        const cardKey = `${card.suit}${card.rank}`;
+        return this.state.emojiMapping.get(cardKey) || '🃏'; // По умолчанию стандартная карта
     }
 
     public addPlayer(player: { id: number; username: string; chatId: number }): boolean {
@@ -245,6 +306,9 @@ export class BelkaGame {
 
         // Определяем козырь для первого раунда (всегда крести)
         this.state.trump = '♣';
+
+        // Генерируем начальное шифрование эмодзи для первого раунда
+        this.generateEmojiMapping();
 
         console.log(`[LOG] Инициализация игры завершена. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
 
@@ -630,6 +694,9 @@ export class BelkaGame {
         this.state.currentRound++;
         console.log(`[LOG] Начинается раунд ${this.state.currentRound}`);
 
+        // Генерируем новое шифрование эмодзи для этого раунда
+        this.generateEmojiMapping();
+
         // Сбрасываем счет и взятки для нового раунда
         this.state.teams.team1.score = 0;
         this.state.teams.team1.tricks = 0;
@@ -803,6 +870,9 @@ export class BelkaGame {
             
             // Увеличиваем номер раунда ПОСЛЕ всех настроек
             this.state.currentRound++;
+            
+            // Генерируем новое шифрование эмодзи для переигровки
+            this.generateEmojiMapping();
             
             return "🥚 Яйца! Обе команды набрали по 60 очков. Раунд будет переигран, победившая команда получит 4 очка.";
         }
