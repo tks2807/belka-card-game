@@ -596,6 +596,10 @@ class BelkaGame {
         }
         // Определяем козырь для нового раунда
         this.determineNewTrump();
+        // Пересортировываем карты всех игроков после определения козыря
+        for (const player of this.state.players) {
+            this.sortPlayerHand(player.cards);
+        }
         console.log(`[LOG] Раунд ${this.state.currentRound} инициализирован. Козырь: ${this.state.trump}, держатель валета крести: ${((_a = this.state.clubJackHolder) === null || _a === void 0 ? void 0 : _a.username) || 'не найден'}`);
     }
     determineNewTrump() {
