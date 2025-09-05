@@ -1338,6 +1338,7 @@ bot.command('ranks', async (ctx) => {
 bot.command('myrank', async (ctx) => {
     const userId = ctx.from?.id;
     const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
+    const chatId = ctx.chat?.id;
     
     if (!userId) {
         await ctx.reply('Не удалось определить пользователя.');
@@ -1345,11 +1346,25 @@ bot.command('myrank', async (ctx) => {
     }
     
     const statsService = new StatsService_1.StatsService();
-    const playerELO = await statsService.getPlayerELO(userId);
+    
+    // Определяем тип чата и соответствующий ELO
+    let playerELO;
+    let rankScope;
+    
+    if (chatId && chatId < 0) {
+        // Групповой чат - показываем чат ELO
+        playerELO = await statsService.getPlayerChatELO(userId, chatId);
+        rankScope = ' (этот чат)';
+    } else {
+        // Приватный чат - показываем глобальный ELO
+        playerELO = await statsService.getPlayerELO(userId);
+        rankScope = ' (глобальный)';
+    }
+    
     const rank = statsService.getRankByELO(playerELO);
     const progress = statsService.getRankProgress(playerELO);
     
-    let message = `🎖 *Ваш ранг, ${username}* 🎖\n\n`;
+    let message = `🎖 *Ваш ранг, ${username}*${rankScope} 🎖\n\n`;
     message += `${rank.icon} **${rank.name}**\n`;
     message += `📊 ELO: ${playerELO}\n`;
     message += `📝 ${rank.description}\n\n`;

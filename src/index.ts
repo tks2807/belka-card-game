@@ -556,7 +556,7 @@ bot.help(async (ctx) => {
 /ratingchat - Лидерборд этого чата
 /ranks - Система рангов
 /myrank - Мой персональный ранг
-
+image.png
 🎮 Управление игрой:
 /endgame - Проголосовать за завершение игры
 /clearbot - Сбросить текущую игру (в случае проблем)
@@ -1492,6 +1492,7 @@ bot.command('help', (ctx) => {
 bot.command('myrank', async (ctx) => {
     const userId = ctx.from?.id;
     const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
+    const chatId = ctx.chat?.id;
     
     if (!userId) {
         await ctx.reply('Не удалось определить пользователя.');
@@ -1499,11 +1500,25 @@ bot.command('myrank', async (ctx) => {
     }
     
     const statsService = new StatsService();
-    const playerELO = await statsService.getPlayerELO(userId);
+    
+    // Определяем тип чата и соответствующий ELO
+    let playerELO: number;
+    let rankScope: string;
+    
+    if (chatId && chatId < 0) {
+        // Групповой чат - показываем чат ELO
+        playerELO = await statsService.getPlayerChatELO(userId, chatId);
+        rankScope = ' (этот чат)';
+    } else {
+        // Приватный чат - показываем глобальный ELO
+        playerELO = await statsService.getPlayerELO(userId);
+        rankScope = ' (глобальный)';
+    }
+    
     const rank = statsService.getRankByELO(playerELO);
     const progress = statsService.getRankProgress(playerELO);
     
-    let message = `🎖 *Ваш ранг, ${username}* 🎖\n\n`;
+    let message = `🎖 *Ваш ранг, ${username}*${rankScope} 🎖\n\n`;
     message += `${rank.icon} **${rank.name}**\n`;
     message += `📊 ELO: ${playerELO}\n`;
     message += `📝 ${rank.description}\n\n`;

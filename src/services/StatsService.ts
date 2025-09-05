@@ -29,7 +29,7 @@ export class StatsService {
         SULTAN: { min: 2000, max: 2199, name: "Сұлтан", nameKz: "Сұлтан", icon: "👑", description: "Благородный правитель" },
         BEGLERBEG: { min: 2200, max: 2399, name: "Беклербек", nameKz: "Беклербек", icon: "🏛️", description: "Наместник султана, правитель области" },
         KHAN: { min: 2400, max: 2599, name: "Хан", nameKz: "Хан", icon: "🌟", description: "Великий хан" },
-        LEGEND: { min: 2600, max: 2800, name: "Аңыз", nameKz: "Аңыз", icon: "💫", description: "Легенда белки" }
+        LEGEND: { min: 2600, max: 9999, name: "Аңыз", nameKz: "Аңыз", icon: "💫", description: "Легенда белки" }
     };
 
     // Определение ранга по ELO
@@ -222,9 +222,9 @@ export class StatsService {
             const newELO = Math.round(playerELO + modifiedELOChange);
             const newChatELO = Math.round(playerChatELO + modifiedELOChange);
 
-            // Ограничиваем ELO в разумных пределах (500-2800)
-                    const clampedELO = Math.min(Math.max(newELO, 500), 2800);
-        const clampedChatELO = Math.min(Math.max(newChatELO, 500), 2800);
+                        // Ограничиваем ELO в разумных пределах (500-9999)
+            const clampedELO = Math.min(Math.max(newELO, 500), 9999);
+            const clampedChatELO = Math.min(Math.max(newChatELO, 500), 9999);
 
             // Обновляем глобальный ELO
             await client.query(`
