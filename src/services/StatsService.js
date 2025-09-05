@@ -404,7 +404,7 @@ class StatsService {
                     }
                 ];
             });
-            // Сортируем по комплексному рейтингу (квалифицированные игроки сначала)
+            // Сортируем по ELO рейтингу (квалифицированные игроки сначала)
             playersWithRating.sort((a, b) => {
                 const aStats = a[1];
                 const bStats = b[1];
@@ -490,7 +490,7 @@ class StatsService {
                     }
                 ];
             });
-            // Сортируем по комплексному рейтингу
+            // Сортируем по ELO рейтингу
             playersWithRating.sort((a, b) => {
                 const aStats = a[1];
                 const bStats = b[1];

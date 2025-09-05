@@ -541,7 +541,7 @@ export class StatsService {
                 ] as [number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number }];
             });
 
-            // Сортируем по комплексному рейтингу
+            // Сортируем по ELO рейтингу
             playersWithRating.sort((a, b) => {
                 const aStats = a[1];
                 const bStats = b[1];
@@ -550,7 +550,7 @@ export class StatsService {
                 if (!aStats.isQualified && bStats.isQualified) return 1;
                 
                 if (aStats.isQualified && bStats.isQualified) {
-                    return bStats.complexRating - aStats.complexRating;
+                    return bStats.eloRating - aStats.eloRating;
                 } else {
                     if (bStats.winrate !== aStats.winrate) {
                         return bStats.winrate - aStats.winrate;

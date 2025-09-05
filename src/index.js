@@ -289,8 +289,8 @@ bot.telegram.setMyCommands([
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
     //{ command: 'time', description: 'Включить автоматические ходы (30 сек)' },
-    { command: 'leaderboardall', description: 'Показать глобальную таблицу лидеров' },
-    { command: 'leaderboardchat', description: 'Показать таблицу лидеров для текущего чата' },
+    { command: 'ratingall', description: 'Глобальный рейтинг игроков' },
+    { command: 'ratingchat', description: 'Рейтинг игроков (этот чат)' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' }
@@ -471,8 +471,7 @@ bot.help(async (ctx) => {
 📊 Рейтинг и статистика:
 /rating - Справедливый рейтинг (все чаты) ⭐ РЕКОМЕНДУЕТСЯ
 /ratingchat - Справедливый рейтинг (этот чат) ⭐ РЕКОМЕНДУЕТСЯ
-/leaderboardall - Простая таблица лидеров (все чаты)
-/leaderboardchat - Простая таблица лидеров (этот чат)
+
 
 🎮 Управление игрой:
 /endgame - Проголосовать за завершение игры
@@ -774,42 +773,7 @@ bot.command('state', async (ctx) => {
 const statsService = new StatsService_1.StatsService();
 // --- Leaderboard Pagination ---
 const LEADERBOARD_LIMIT = 4;
-// Helper to send leaderboard (all) - старая версия
-async function sendLeaderboardAll(ctx, offset = 0, isEdit = false) {
-    console.log('sendLeaderboardAll called with offset:', offset, 'isEdit:', isEdit);
-    const limit = LEADERBOARD_LIMIT;
-    const leaderboardEntries = await statsService.getLeaderboardAll(offset, limit);
-    console.log('Fetched leaderboardEntries.length:', leaderboardEntries.length);
-    if (leaderboardEntries.length === 0 && offset === 0) {
-        await ctx.reply('Лидерборд пока пуст.');
-        return;
-    }
-    let message = '🏆 Таблица лидеров (все чаты) 🏆\n\n';
-    leaderboardEntries.forEach(([playerId, stats], index) => {
-        const s = stats;
-        message += `*${offset + index + 1}. ${s.username} (${s.winrate}%)*\n` +
-            `🃏 Игры: ${s.gamesPlayed}\n` +
-            `🏆 Победы: ${s.gamesWon}\n` +
-            `🎖 Голые победы: ${s.golayaCount}\n` +
-            `🥚 Яйца: ${s.eggsCount}\n\n`;
-    });
-    // Navigation buttons
-    const keyboard = [];
-    if (offset > 0)
-        keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardall:${offset - limit}` });
-    if (leaderboardEntries.length === limit)
-        keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardall:${offset + limit}` });
-    console.log('Leaderboard keyboard:', keyboard);
-    const replyMarkup = { inline_keyboard: [keyboard] };
-    if (isEdit) {
-        console.log('Editing leaderboard message...');
-        await ctx.editMessageText(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
-    }
-    else {
-        console.log('Sending new leaderboard message...');
-        await ctx.reply(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
-    }
-}
+
 // Helper to send improved leaderboard (all) - новая версия с комплексным рейтингом
 async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {
     console.log('sendLeaderboardAllImproved called with offset:', offset, 'isEdit:', isEdit);
@@ -831,10 +795,7 @@ async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {
             `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
             `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
     });
-    message += '💡 *Легенда:*\n';
-    message += '🎯 - Квалифицированный игрок (5+ игр)\n';
-    message += '🎲 - Новичок (менее 5 игр)\n';
-    message += '⭐ - Комплексный рейтинг (учитывает победы, очки, взятки, достижения)\n\n';
+
     // Navigation buttons
     const keyboard = [];
     if (offset > 0)
@@ -852,41 +813,7 @@ async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {
         await ctx.reply(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
     }
 }
-// Helper to send leaderboard (chat) - старая версия
-async function sendLeaderboardChat(ctx, chatId, offset = 0, isEdit = false) {
-    console.log('sendLeaderboardChat called with chatId:', chatId, 'offset:', offset, 'isEdit:', isEdit);
-    const limit = LEADERBOARD_LIMIT;
-    const leaderboardEntries = await statsService.getLeaderboardChat(chatId, offset, limit);
-    console.log('Fetched chat leaderboardEntries.length:', leaderboardEntries.length);
-    if (leaderboardEntries.length === 0 && offset === 0) {
-        await safeSendMessage(ctx, 'Лидерборд для этого чата пока пуст.');
-        return;
-    }
-    let message = '🏆 Таблица лидеров (только этот чат) 🏆\n\n';
-    leaderboardEntries.forEach(([playerId, stats], index) => {
-        message += `*${offset + index + 1}. ${stats.username} (${stats.winrate}%)*\n` +
-            `🃏 Игры: ${stats.gamesPlayed}\n` +
-            `🏆 Победы: ${stats.gamesWon}\n` +
-            `🎖 Голая победа: ${stats.golayaCount}\n` +
-            `🥚 Яйца: ${stats.eggsCount}\n\n`;
-    });
-    // Navigation buttons
-    const keyboard = [];
-    if (offset > 0)
-        keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardchat:${offset - limit}` });
-    if (leaderboardEntries.length === limit)
-        keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardchat:${offset + limit}` });
-    console.log('Chat leaderboard keyboard:', keyboard);
-    const replyMarkup = { inline_keyboard: [keyboard] };
-    if (isEdit) {
-        console.log('Editing chat leaderboard message...');
-        await ctx.editMessageText(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
-    }
-    else {
-        console.log('Sending new chat leaderboard message...');
-        await safeSendMessage(ctx, message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
-    }
-}
+
 // Helper to send improved leaderboard (chat) - новая версия с комплексным рейтингом
 async function sendLeaderboardChatImproved(ctx, chatId, offset = 0, isEdit = false) {
     console.log('sendLeaderboardChatImproved called with chatId:', chatId, 'offset:', offset, 'isEdit:', isEdit);
@@ -930,19 +857,7 @@ async function sendLeaderboardChatImproved(ctx, chatId, offset = 0, isEdit = fal
     }
 }
 // --- Bot commands ---
-// Старые команды (простой винрейт)
-bot.command('leaderboardall', async (ctx) => {
-    await sendLeaderboardAll(ctx, 0);
-});
-bot.command('leaderboardchat', async (ctx) => {
-    var _a;
-    const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
-    if (!chatId)
-        return;
-    const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
-    await sendLeaderboardChat(ctx, actualChatId, 0);
-});
-// Новые команды (комплексный рейтинг)
+// Команды рейтинга
 bot.command('rating', async (ctx) => {
     await sendLeaderboardAllImproved(ctx, 0);
 });
@@ -958,20 +873,6 @@ bot.command('ratingchat', async (ctx) => {
     await sendLeaderboardChatImproved(ctx, actualChatId, 0);
 });
 // --- Callback handlers for pagination ---
-bot.action(/leaderboardall:(\d+)/, async (ctx) => {
-    const offset = parseInt(ctx.match[1], 10) || 0;
-    await sendLeaderboardAll(ctx, Math.max(0, offset), true);
-});
-bot.action(/leaderboardchat:(\d+)/, async (ctx) => {
-    var _a;
-    const offset = parseInt(ctx.match[1], 10) || 0;
-    const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
-    if (!chatId)
-        return;
-    const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
-    await sendLeaderboardChat(ctx, actualChatId, Math.max(0, offset), true);
-});
-// Новые обработчики пагинации для улучшенного лидерборда
 bot.action(/leaderboardallimproved:(\d+)/, async (ctx) => {
     const offset = parseInt(ctx.match[1], 10) || 0;
     await sendLeaderboardAllImproved(ctx, Math.max(0, offset), true);

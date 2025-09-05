@@ -997,21 +997,25 @@ export class BelkaGame {
                 playerELOs.set(player.id, elo);
             }
 
+            // Получаем командные данные для передачи в рейтинг
+            const winningTeamData = winningTeam === 1 ? this.state.teams.team1 : this.state.teams.team2;
+            const losingTeamData = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
+
             // Обновляем статистику для победителей
             for (const player of winners) {
                 await this.statsService.updatePlayerStats(
                     player.id,
                     player.username,
                     true,
-                    winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
-                    player.tricks || 0,
+                    winningTeamData.score,
+                    player.tricks || 0, // Для общей статистики оставляем индивидуальные взятки
                     false,
                     isGolden,
                     this.state.chatId,
                     true
                 );
 
-                // Обновляем ELO с учетом противников
+                // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
                 const teammate = winners.find(p => p.id !== player.id);
                 const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
                 const opponent1ELO = playerELOs.get(losers[0].id) || 1000;
@@ -1021,8 +1025,8 @@ export class BelkaGame {
                     player.id,
                     player.username,
                     true,
-                    winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
-                    player.tricks || 0,
+                    winningTeamData.score,
+                    winningTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
                     isGolden,
                     teammateELO,
                     opponent1ELO,
@@ -1037,15 +1041,15 @@ export class BelkaGame {
                     player.id,
                     player.username,
                     false,
-                    winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
-                    player.tricks || 0,
+                    losingTeamData.score,
+                    player.tricks || 0, // Для общей статистики оставляем индивидуальные взятки
                     false,
                     false,
                     this.state.chatId,
                     true
                 );
 
-                // Обновляем ELO с учетом противников
+                // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
                 const teammate = losers.find(p => p.id !== player.id);
                 const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
                 const opponent1ELO = playerELOs.get(winners[0].id) || 1000;
@@ -1055,8 +1059,8 @@ export class BelkaGame {
                     player.id,
                     player.username,
                     false,
-                    winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
-                    player.tricks || 0,
+                    losingTeamData.score,
+                    losingTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
                     false,
                     teammateELO,
                     opponent1ELO,

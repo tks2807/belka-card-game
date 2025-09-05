@@ -840,17 +840,20 @@ class BelkaGame {
             // Получаем ELO рейтинги всех игроков для расчета изменений
             const allPlayers = [...this.state.teams.team1.players, ...this.state.teams.team2.players];
             const playerELOs = new Map();
-            
             for (const player of allPlayers) {
                 const elo = await this.statsService.getPlayerELO(player.id);
                 playerELOs.set(player.id, elo);
             }
 
+            // Получаем командные данные для передачи в рейтинг
+            const winningTeamData = winningTeam === 1 ? this.state.teams.team1 : this.state.teams.team2;
+            const losingTeamData = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
+
             // Обновляем статистику для победителей
             for (const player of winners) {
-                await this.statsService.updatePlayerStats(player.id, player.username, true, winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score, player.tricks || 0, false, isGolden, this.state.chatId, true);
+                await this.statsService.updatePlayerStats(player.id, player.username, true, winningTeamData.score, player.tricks || 0, false, isGolden, this.state.chatId, true);
                 
-                // Обновляем ELO с учетом противников
+                // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
                 const teammate = winners.find(p => p.id !== player.id);
                 const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
                 const opponent1ELO = playerELOs.get(losers[0].id) || 1000;
@@ -860,8 +863,8 @@ class BelkaGame {
                     player.id,
                     player.username,
                     true,
-                    winningTeam === 1 ? this.state.teams.team1.score : this.state.teams.team2.score,
-                    player.tricks || 0,
+                    winningTeamData.score,
+                    winningTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
                     isGolden,
                     teammateELO,
                     opponent1ELO,
@@ -871,9 +874,9 @@ class BelkaGame {
             }
             // Обновляем статистику для проигравших
             for (const player of losers) {
-                await this.statsService.updatePlayerStats(player.id, player.username, false, winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score, player.tricks || 0, false, false, this.state.chatId, true);
+                await this.statsService.updatePlayerStats(player.id, player.username, false, losingTeamData.score, player.tricks || 0, false, false, this.state.chatId, true);
                 
-                // Обновляем ELO с учетом противников
+                // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
                 const teammate = losers.find(p => p.id !== player.id);
                 const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
                 const opponent1ELO = playerELOs.get(winners[0].id) || 1000;
@@ -883,8 +886,8 @@ class BelkaGame {
                     player.id,
                     player.username,
                     false,
-                    winningTeam === 1 ? this.state.teams.team2.score : this.state.teams.team1.score,
-                    player.tricks || 0,
+                    losingTeamData.score,
+                    losingTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
                     false,
                     teammateELO,
                     opponent1ELO,
