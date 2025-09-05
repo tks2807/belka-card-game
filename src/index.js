@@ -790,12 +790,20 @@ async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {
     leaderboardEntries.forEach(([playerId, stats], index) => {
         const s = stats;
         const position = offset + index + 1;
-        const ratingDisplay = s.isQualified ? `${s.rank.icon} ${s.eloRating} ELO (${s.rank.name})` : `${s.winrate}% (${s.gamesPlayed} игр)`;
         const statusIcon = s.isQualified ? '🎯' : '🎲';
-        message += `*${position}. ${s.username}* ${statusIcon}\n` +
-            `📊 Рейтинг: ${ratingDisplay}\n` +
-            `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
-            `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+        
+        if (s.isQualified) {
+            message += `*${position}. ${s.username}* ${statusIcon}\n` +
+                `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
+                `${s.rank.icon} Ранг: ${s.rank.name}\n` +
+                `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
+                `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+        } else {
+            message += `*${position}. ${s.username}* ${statusIcon}\n` +
+                `📊 Рейтинг: ${s.winrate}% (${s.gamesPlayed} игр)\n` +
+                `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
+                `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+        }
     });
 
     // Navigation buttons
@@ -830,12 +838,20 @@ async function sendLeaderboardChatImproved(ctx, chatId, offset = 0, isEdit = fal
     leaderboardEntries.forEach(([playerId, stats], index) => {
         const s = stats;
         const position = offset + index + 1;
-        const ratingDisplay = s.isQualified ? `${s.rank.icon} ${s.eloRating} ELO (${s.rank.name})` : `${s.winrate}% (${s.gamesPlayed} игр)`;
         const statusIcon = s.isQualified ? '🎯' : '🎲';
-        message += `*${position}. ${s.username}* ${statusIcon}\n` +
-            `📊 Рейтинг: ${ratingDisplay}\n` +
-            `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
-            `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+        
+        if (s.isQualified) {
+            message += `*${position}. ${s.username}* ${statusIcon}\n` +
+                `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
+                `${s.rank.icon} Ранг: ${s.rank.name}\n` +
+                `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
+                `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+        } else {
+            message += `*${position}. ${s.username}* ${statusIcon}\n` +
+                `📊 Рейтинг: ${s.winrate}% (${s.gamesPlayed} игр)\n` +
+                `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
+                `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
+        }
     });
 
     // Navigation buttons
@@ -1295,6 +1311,96 @@ bot.command('clearbot', async (ctx) => {
         await ctx.reply('Произошла ошибка при сбросе игры');
     }
 });
+
+// Команда для отображения системы рангов
+bot.command('ranks', async (ctx) => {
+    const statsService = new StatsService_1.StatsService();
+    const allRanks = statsService.getAllRanks();
+    
+    let message = '🏆 Система рангов белки 🏆\n\n';
+    message += 'Ранги основаны на ELO рейтинге в казахском стиле:\n\n';
+    
+    allRanks.forEach((rank) => {
+        message += `${rank.icon} **${rank.name}** (${rank.nameKz})\n`;
+        message += `📊 ELO: ${rank.min} - ${rank.max}\n`;
+        message += `📝 ${rank.description}\n\n`;
+    });
+    
+    message += '💡 *Совет*: Играйте больше игр и побеждайте сильных противников для повышения рейтинга!';
+    
+    await ctx.reply(message, { parse_mode: 'Markdown' });
+});
+
+// Команда для просмотра персонального ранга
+bot.command('myrank', async (ctx) => {
+    const userId = ctx.from?.id;
+    const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
+    
+    if (!userId) {
+        await ctx.reply('Не удалось определить пользователя.');
+        return;
+    }
+    
+    const statsService = new StatsService_1.StatsService();
+    const playerELO = await statsService.getPlayerELO(userId);
+    const rank = statsService.getRankByELO(playerELO);
+    const progress = statsService.getRankProgress(playerELO);
+    
+    let message = `🎖 *Ваш ранг, ${username}* 🎖\n\n`;
+    message += `${rank.icon} **${rank.name}** (${rank.nameKz})\n`;
+    message += `📊 ELO: ${playerELO}\n`;
+    message += `📝 ${rank.description}\n\n`;
+    
+    if (progress.next) {
+        const progressBar = '▓'.repeat(Math.floor(progress.progress / 10)) + '░'.repeat(10 - Math.floor(progress.progress / 10));
+        message += `📈 *Прогресс до ${progress.next.name}:*\n`;
+        message += `${progressBar} ${progress.progress}%\n`;
+        message += `🎯 Нужно еще: ${progress.eloToNext} ELO\n\n`;
+    } else {
+        message += `🌟 *Поздравляем!* Вы достигли максимального ранга!\n\n`;
+    }
+    
+    message += '💪 Продолжайте играть и побеждать для повышения рейтинга!';
+    
+    await ctx.reply(message, { parse_mode: 'Markdown' });
+});
+
+// Команда помощи
+bot.command('help', (ctx) => {
+  const helpMessage = `🎮 *Добро пожаловать в игру Белка!* 🎮
+
+🃏 *Команды игры:*
+/startgame - Начать новую игру
+/joingame - Присоединиться к игре
+/cards - Показать свои карты
+/endgame - Проголосовать за завершение игры
+/clearbot - Сбросить игру
+
+📊 *Статистика и рейтинг:*
+/rating - Лидерборд (первые 5 мест)
+/ratingall - Общий лидерборд всех чатов
+/ratingchat - Лидерборд этого чата
+/ranks - Система рангов
+/myrank - Мой персональный ранг
+
+ℹ️ *Информация:*
+/help - Эта справка
+/warmuty - Благодарности
+
+🎯 *Как играть:*
+1. Создайте игру командой /startgame
+2. Другие игроки присоединяются через /joingame
+3. Когда наберется 4 игрока, игра начнется автоматически
+4. Используйте кнопки под картами для ходов
+
+🏆 *Рейтинговая система:*
+- Для участия в рейтинге нужно сыграть минимум 5 игр
+- ELO рейтинг учитывает силу противников и вашу игру
+- Казахские ранги от Сарт до Аңыз (/ranks)`;
+  
+  ctx.reply(helpMessage, { parse_mode: 'Markdown' });
+});
+
 // Функция для форматирования карт игрока
 function formatPlayerCards(player, state) {
     var _a;
@@ -1754,95 +1860,6 @@ bot.command('inline_setup', async (ctx) => {
         console.error('Ошибка при выполнении команды inline_setup:', error);
         await ctx.reply('Произошла ошибка при получении информации о боте');
     }
-});
-
-// Команда для отображения системы рангов
-bot.command('ranks', async (ctx) => {
-    const statsService = new StatsService_1.StatsService();
-    const allRanks = statsService.getAllRanks();
-    
-    let message = '🏆 Система рангов белки 🏆\n\n';
-    message += 'Ранги основаны на ELO рейтинге в казахском стиле:\n\n';
-    
-    allRanks.forEach((rank) => {
-        message += `${rank.icon} **${rank.name}** (${rank.nameKz})\n`;
-        message += `📊 ELO: ${rank.min} - ${rank.max}\n`;
-        message += `📝 ${rank.description}\n\n`;
-    });
-    
-    message += '💡 *Совет*: Играйте больше игр и побеждайте сильных противников для повышения рейтинга!';
-    
-    await ctx.reply(message, { parse_mode: 'Markdown' });
-});
-
-// Команда помощи
-bot.command('help', (ctx) => {
-  const helpMessage = `🎮 *Добро пожаловать в игру Белка!* 🎮
-
-🃏 *Команды игры:*
-/startgame - Начать новую игру
-/joingame - Присоединиться к игре
-/cards - Показать свои карты
-/endgame - Проголосовать за завершение игры
-/clearbot - Сбросить игру
-
-📊 *Статистика и рейтинг:*
-/rating - Лидерборд (первые 5 мест)
-/ratingall - Общий лидерборд всех чатов
-/ratingchat - Лидерборд этого чата
-/ranks - Система рангов
-/myrank - Мой персональный ранг
-
-ℹ️ *Информация:*
-/help - Эта справка
-/warmuty - Благодарности
-
-🎯 *Как играть:*
-1. Создайте игру командой /startgame
-2. Другие игроки присоединяются через /joingame
-3. Когда наберется 4 игрока, игра начнется автоматически
-4. Используйте кнопки под картами для ходов
-
-🏆 *Рейтинговая система:*
-- Для участия в рейтинге нужно сыграть минимум 5 игр
-- ELO рейтинг учитывает силу противников и вашу игру
-- Казахские ранги от Сарт до Аңыз (/ranks)`;
-  
-  ctx.reply(helpMessage, { parse_mode: 'Markdown' });
-});
-
-// Команда для просмотра персонального ранга
-bot.command('myrank', async (ctx) => {
-    const userId = ctx.from?.id;
-    const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
-    
-    if (!userId) {
-        await ctx.reply('Не удалось определить пользователя.');
-        return;
-    }
-    
-    const statsService = new StatsService_1.StatsService();
-    const playerELO = await statsService.getPlayerELO(userId);
-    const rank = statsService.getRankByELO(playerELO);
-    const progress = statsService.getRankProgress(playerELO);
-    
-    let message = `🎖 *Ваш ранг, ${username}* 🎖\n\n`;
-    message += `${rank.icon} **${rank.name}** (${rank.nameKz})\n`;
-    message += `📊 ELO: ${playerELO}\n`;
-    message += `📝 ${rank.description}\n\n`;
-    
-    if (progress.next) {
-        const progressBar = '▓'.repeat(Math.floor(progress.progress / 10)) + '░'.repeat(10 - Math.floor(progress.progress / 10));
-        message += `📈 *Прогресс до ${progress.next.name}:*\n`;
-        message += `${progressBar} ${progress.progress}%\n`;
-        message += `🎯 Нужно еще: ${progress.eloToNext} ELO\n\n`;
-    } else {
-        message += `🌟 *Поздравляем!* Вы достигли максимального ранга!\n\n`;
-    }
-    
-    message += '💪 Продолжайте играть и побеждать для повышения рейтинга!';
-    
-    await ctx.reply(message, { parse_mode: 'Markdown' });
 });
 
 // Обработка остановки бота
