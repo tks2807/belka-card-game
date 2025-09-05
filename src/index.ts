@@ -913,11 +913,6 @@ async function sendLeaderboardAllImproved(ctx: any, offset = 0, isEdit = false) 
       `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
   });
   
-  message += '💡 *Легенда:*\n';
-  message += '🎯 - Квалифицированный игрок (5+ игр) - ELO рейтинг\n';
-  message += '🎲 - Новичок (менее 5 игр) - процент побед\n';
-  message += '🏅 - Гибридный рейтинг: ELO + качество игры\n\n';
-  
   // Navigation buttons
   const keyboard = [];
   if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardallimproved:${offset - limit}` });

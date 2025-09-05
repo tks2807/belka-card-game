@@ -835,10 +835,7 @@ async function sendLeaderboardChatImproved(ctx, chatId, offset = 0, isEdit = fal
             `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
             `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
     });
-    message += '💡 *Легенда:*\n';
-    message += '🎯 - Квалифицированный игрок (5+ игр)\n';
-    message += '🎲 - Новичок (менее 5 игр)\n';
-    message += '⭐ - Комплексный рейтинг (учитывает победы, очки, взятки, достижения)\n\n';
+
     // Navigation buttons
     const keyboard = [];
     if (offset > 0)
