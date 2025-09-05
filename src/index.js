@@ -467,12 +467,15 @@ bot.help(async (ctx) => {
 Команды:
 /join - Присоединиться к игре
 /startbelka - Начать игру в режиме "Белка" (до 12 глаз)
- /startwalka - Начать игру в режиме "Шалқа" (до 6 глаз) - быстрая игра
+/startwalka - Начать игру в режиме "Шалқа" (до 6 глаз) - быстрая игра
 /state - Показать текущее состояние игры
 
-📊 Рейтинг и статистика:
-/rating - Справедливый рейтинг (все чаты) ⭐ РЕКОМЕНДУЕТСЯ
-/ratingchat - Справедливый рейтинг (этот чат) ⭐ РЕКОМЕНДУЕТСЯ
+📊 *Статистика и рейтинг:*
+/rating - Лидерборд (первые 5 мест)
+/ratingall - Общий лидерборд всех чатов
+/ratingchat - Лидерборд этого чата
+/ranks - Система рангов
+/myrank - Мой персональный ранг
 
 
 🎮 Управление игрой:
@@ -1321,7 +1324,7 @@ bot.command('ranks', async (ctx) => {
     message += 'Ранги основаны на ELO рейтинге в казахском стиле:\n\n';
     
     allRanks.forEach((rank) => {
-        message += `${rank.icon} **${rank.name}** (${rank.nameKz})\n`;
+        message += `${rank.icon} **${rank.name}**\n`;
         message += `📊 ELO: ${rank.min} - ${rank.max}\n`;
         message += `📝 ${rank.description}\n\n`;
     });
@@ -1347,7 +1350,7 @@ bot.command('myrank', async (ctx) => {
     const progress = statsService.getRankProgress(playerELO);
     
     let message = `🎖 *Ваш ранг, ${username}* 🎖\n\n`;
-    message += `${rank.icon} **${rank.name}** (${rank.nameKz})\n`;
+    message += `${rank.icon} **${rank.name}**\n`;
     message += `📊 ELO: ${playerELO}\n`;
     message += `📝 ${rank.description}\n\n`;
     

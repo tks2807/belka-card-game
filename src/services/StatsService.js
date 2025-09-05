@@ -27,7 +27,7 @@ class StatsService {
             AKSAKAT: { min: 1600, max: 1799, name: "Ақсақал", nameKz: "Ақсақал", icon: "👴", description: "Мудрый старейшина" },
             BIY: { min: 1800, max: 1999, name: "Би", nameKz: "Би", icon: "⚖️", description: "Справедливый судья" },
             SULTAN: { min: 2000, max: 2199, name: "Сұлтан", nameKz: "Сұлтан", icon: "👑", description: "Благородный правитель" },
-            BEGLERBEG: { min: 2200, max: 2399, name: "Беклярбек", nameKz: "Беклярбек", icon: "🏛️", description: "Наместник султана, правитель области" },
+            BEGLERBEG: { min: 2200, max: 2399, name: "Беклербек", nameKz: "Беклербек", icon: "🏛️", description: "Наместник султана, правитель области" },
             KHAN: { min: 2400, max: 2599, name: "Хан", nameKz: "Хан", icon: "🌟", description: "Великий хан" },
             LEGEND: { min: 2600, max: 2800, name: "Аңыз", nameKz: "Аңыз", icon: "💫", description: "Легенда белки" }
         };
