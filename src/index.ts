@@ -353,7 +353,7 @@ bot.telegram.setMyCommands([
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
     { command: 'ranks', description: 'Показать систему рангов' },
-    { command: 'myrank', description: 'Просмотреть персональный ранг' }
+    { command: 'myrank', description: 'Мой ранг в этом чате' }
 ]).then(() => {
     // Включаем инлайн-режим
     return bot.telegram.setWebhook(''); // Сбрасываем вебхук для long polling
@@ -1468,7 +1468,7 @@ bot.command('help', (ctx) => {
 /ratingall - Общий лидерборд всех чатов
 /ratingchat - Лидерборд этого чата
 /ranks - Система рангов
-/myrank - Мой персональный ранг
+/myrank - Мой ранг в этом чате
 
 ℹ️ *Информация:*
 /help - Эта справка
@@ -1488,7 +1488,7 @@ bot.command('help', (ctx) => {
   ctx.reply(helpMessage, { parse_mode: 'Markdown' });
 });
 
-// Команда для просмотра персонального ранга
+// Команда для просмотра персонального ранга в чате
 bot.command('myrank', async (ctx) => {
     const userId = ctx.from?.id;
     const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
@@ -1499,26 +1499,19 @@ bot.command('myrank', async (ctx) => {
         return;
     }
     
-    const statsService = new StatsService();
-    
-    // Определяем тип чата и соответствующий ELO
-    let playerELO: number;
-    let rankScope: string;
-    
-    if (chatId && chatId < 0) {
-        // Групповой чат - показываем чат ELO
-        playerELO = await statsService.getPlayerChatELO(userId, chatId);
-        rankScope = ' (этот чат)';
-    } else {
-        // Приватный чат - показываем глобальный ELO
-        playerELO = await statsService.getPlayerELO(userId);
-        rankScope = ' (глобальный)';
+    if (!chatId || chatId > 0) {
+        await ctx.reply('❌ Эта команда работает только в групповых чатах.\n\n💡 Для просмотра глобального рейтинга используйте:\n/ratingall - общий лидерборд');
+        return;
     }
     
+    const statsService = new StatsService();
+    
+    // Показываем только чат ELO
+    const playerELO = await statsService.getPlayerChatELO(userId, chatId);
     const rank = statsService.getRankByELO(playerELO);
     const progress = statsService.getRankProgress(playerELO);
     
-    let message = `🎖 *Ваш ранг, ${username}*${rankScope} 🎖\n\n`;
+    let message = `🎖 *Ваш ранг в этом чате, ${username}* 🎖\n\n`;
     message += `${rank.icon} **${rank.name}**\n`;
     message += `📊 ELO: ${playerELO}\n`;
     message += `📝 ${rank.description}\n\n`;
@@ -1532,7 +1525,7 @@ bot.command('myrank', async (ctx) => {
         message += `🌟 *Поздравляем!* Вы достигли максимального ранга!\n\n`;
     }
     
-    message += '💪 Продолжайте играть и побеждать для повышения рейтинга!';
+    message += '💪 Продолжайте играть в этом чате для повышения рейтинга!';
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
 });
