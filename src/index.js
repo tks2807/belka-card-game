@@ -772,7 +772,7 @@ bot.command('state', async (ctx) => {
 });
 const statsService = new StatsService_1.StatsService();
 // --- Leaderboard Pagination ---
-const LEADERBOARD_LIMIT = 4;
+const LEADERBOARD_LIMIT = 5;
 
 // Helper to send improved leaderboard (all) - новая версия с комплексным рейтингом
 async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {

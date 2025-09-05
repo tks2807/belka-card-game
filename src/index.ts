@@ -885,7 +885,7 @@ const statsService = new StatsService();
 
 // --- Leaderboard Pagination ---
 
-const LEADERBOARD_LIMIT = 4;
+const LEADERBOARD_LIMIT = 5;
 
 // Helper to send leaderboard (all) - старая версия
 
