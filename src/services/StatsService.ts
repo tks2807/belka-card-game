@@ -17,6 +17,66 @@ export class StatsService {
         SPECIAL_WEIGHT: 0.1       // Вес специальных достижений (яйца, голые)
     };
 
+    // Система рангов в казахском стиле
+    private readonly ELO_RANKS = {
+        SART: { min: 0, max: 799, name: "Сарт", nameKz: "Сарт", icon: "🏪", description: "Торговец, начинающий путь" },
+        ZHAUYNGER: { min: 800, max: 999, name: "Жауынгер", nameKz: "Жауынгер", icon: "🗡️", description: "Молодой воин" },
+        BATYR: { min: 1000, max: 1199, name: "Батыр", nameKz: "Батыр", icon: "⚔️", description: "Храбрый воин" },
+        MYNBASY: { min: 1200, max: 1399, name: "Мыңбасы", nameKz: "Мыңбасы", icon: "🛡️", description: "Тысячник, командир тысячи воинов" },
+        TUMENBASY: { min: 1400, max: 1599, name: "Түменбасы", nameKz: "Түменбасы", icon: "🏹", description: "Темник, командир десяти тысяч" },
+        AKSAKAT: { min: 1600, max: 1799, name: "Ақсақал", nameKz: "Ақсақал", icon: "👴", description: "Мудрый старейшина" },
+        BIY: { min: 1800, max: 1999, name: "Би", nameKz: "Би", icon: "⚖️", description: "Справедливый судья" },
+        SULTAN: { min: 2000, max: 2199, name: "Сұлтан", nameKz: "Сұлтан", icon: "👑", description: "Благородный правитель" },
+        BEGLERBEG: { min: 2200, max: 2399, name: "Беклярбек", nameKz: "Беклярбек", icon: "🏛️", description: "Наместник султана, правитель области" },
+        KHAN: { min: 2400, max: 2599, name: "Хан", nameKz: "Хан", icon: "🌟", description: "Великий хан" },
+        LEGEND: { min: 2600, max: 2800, name: "Аңыз", nameKz: "Аңыз", icon: "💫", description: "Легенда белки" }
+    };
+
+    // Определение ранга по ELO
+    public getRankByELO(elo: number): { name: string, nameKz: string, icon: string, description: string, min: number, max: number } {
+        for (const rank of Object.values(this.ELO_RANKS)) {
+            if (elo >= rank.min && elo <= rank.max) {
+                return rank;
+            }
+        }
+        // Если ЭЛО выше максимального, возвращаем высший ранг
+        return this.ELO_RANKS.LEGEND;
+    }
+
+    // Получение прогресса до следующего ранга
+    public getRankProgress(elo: number): { current: any, next: any | null, progress: number, eloToNext: number } {
+        const currentRank = this.getRankByELO(elo);
+        const ranks = Object.values(this.ELO_RANKS);
+        const currentIndex = ranks.findIndex(rank => rank.min === currentRank.min);
+        const nextRank = currentIndex < ranks.length - 1 ? ranks[currentIndex + 1] : null;
+        
+        if (!nextRank) {
+            return {
+                current: currentRank,
+                next: null,
+                progress: 100,
+                eloToNext: 0
+            };
+        }
+
+        const eloInCurrentRank = elo - currentRank.min;
+        const rankRange = currentRank.max - currentRank.min + 1;
+        const progress = Math.min(100, Math.round((eloInCurrentRank / rankRange) * 100));
+        const eloToNext = nextRank.min - elo;
+
+        return {
+            current: currentRank,
+            next: nextRank,
+            progress,
+            eloToNext: Math.max(0, eloToNext)
+        };
+    }
+
+    // Получение списка всех рангов для отображения
+    public getAllRanks(): Array<{ name: string, nameKz: string, icon: string, description: string, min: number, max: number }> {
+        return Object.values(this.ELO_RANKS);
+    }
+
     // Расчет ожидаемого результата для ELO системы
     private calculateExpectedScore(playerRating: number, opponentRating: number): number {
         return 1 / (1 + Math.pow(10, (opponentRating - playerRating) / 400));
@@ -162,9 +222,9 @@ export class StatsService {
             const newELO = Math.round(playerELO + modifiedELOChange);
             const newChatELO = Math.round(playerChatELO + modifiedELOChange);
 
-            // Ограничиваем ELO в разумных пределах (500-2500)
-            const clampedELO = Math.min(Math.max(newELO, 500), 2500);
-            const clampedChatELO = Math.min(Math.max(newChatELO, 500), 2500);
+            // Ограничиваем ELO в разумных пределах (500-2800)
+                    const clampedELO = Math.min(Math.max(newELO, 500), 2800);
+        const clampedChatELO = Math.min(Math.max(newChatELO, 500), 2800);
 
             // Обновляем глобальный ELO
             await client.query(`
@@ -395,7 +455,7 @@ export class StatsService {
     }
 
     // Получение улучшенного лидерборда с гибридным рейтингом
-    public async getLeaderboardAllImproved(offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number }]>> {
+    public async getLeaderboardAllImproved(offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any }]>> {
         const client = await pool.connect();
         try {
             const result = await client.query(`
@@ -432,6 +492,8 @@ export class StatsService {
 
                 const complexRating = this.calculateComplexRating(stats);
                 const isQualified = row.games_played >= this.RATING_CONSTANTS.MIN_GAMES_FOR_RATING;
+                const eloRating = row.elo_rating || this.RATING_CONSTANTS.BASE_ELO;
+                const rank = this.getRankByELO(eloRating);
 
                 return [
                     row.player_id,
@@ -446,9 +508,10 @@ export class StatsService {
                         winrate: Number(row.winrate),
                         complexRating: complexRating,
                         isQualified: isQualified,
-                        eloRating: row.elo_rating || this.RATING_CONSTANTS.BASE_ELO
+                        eloRating: eloRating,
+                        rank: rank
                     }
-                ] as [number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number }];
+                ] as [number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any }];
             });
 
             // Сортируем по гибридному рейтингу (квалифицированные игроки сначала)
@@ -484,7 +547,7 @@ export class StatsService {
     }
 
     // Получение улучшенного лидерборда для чата
-    public async getLeaderboardChatImproved(chatId: number, offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number }]>> {
+    public async getLeaderboardChatImproved(chatId: number, offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any }]>> {
         const client = await pool.connect();
         try {
             const result = await client.query(`
@@ -522,6 +585,8 @@ export class StatsService {
 
                 const complexRating = this.calculateComplexRating(stats);
                 const isQualified = row.games_played >= this.RATING_CONSTANTS.MIN_GAMES_FOR_RATING;
+                const eloRating = row.elo_rating || this.RATING_CONSTANTS.BASE_ELO;
+                const rank = this.getRankByELO(eloRating);
 
                 return [
                     row.player_id,
@@ -536,9 +601,10 @@ export class StatsService {
                         winrate: Number(row.winrate),
                         complexRating: complexRating,
                         isQualified: isQualified,
-                        eloRating: row.elo_rating || this.RATING_CONSTANTS.BASE_ELO
+                        eloRating: eloRating,
+                        rank: rank
                     }
-                ] as [number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number }];
+                ] as [number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any }];
             });
 
             // Сортируем по ELO рейтингу

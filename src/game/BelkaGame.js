@@ -195,7 +195,7 @@ class BelkaGame {
         const cardsPerPlayer = 8;
         for (const player of this.state.players) {
             player.cards = this.state.deck.splice(0, cardsPerPlayer);
-            this.sortPlayerHand(player.cards);
+            // Сортировку выполняем только после определения козыря
         }
     }
 

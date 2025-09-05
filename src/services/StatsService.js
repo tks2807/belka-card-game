@@ -9,10 +9,27 @@ class StatsService {
             BASE_ELO: 1000,
             K_FACTOR: 32,
             MIN_GAMES_FOR_RATING: 5,
-            SCORE_WEIGHT: 0.3,
-            TRICKS_WEIGHT: 0.2,
-            WINRATE_WEIGHT: 0.4,
+            PERFORMANCE_MODIFIER_MAX: 1.5,
+            PERFORMANCE_MODIFIER_MIN: 0.5,
+            SCORE_WEIGHT: 0.4,
+            TRICKS_WEIGHT: 0.4,
+            WINRATE_WEIGHT: 0.1,
             SPECIAL_WEIGHT: 0.1 // Вес специальных достижений (яйца, голые)
+        };
+
+        // Система рангов в казахском стиле
+        this.ELO_RANKS = {
+            SART: { min: 0, max: 799, name: "Сарт", nameKz: "Сарт", icon: "🏪", description: "Торговец, начинающий путь" },
+            ZHAUYNGER: { min: 800, max: 999, name: "Жауынгер", nameKz: "Жауынгер", icon: "🗡️", description: "Молодой воин" },
+            BATYR: { min: 1000, max: 1199, name: "Батыр", nameKz: "Батыр", icon: "⚔️", description: "Храбрый воин" },
+            MYNBASY: { min: 1200, max: 1399, name: "Мыңбасы", nameKz: "Мыңбасы", icon: "🛡️", description: "Тысячник, командир тысячи воинов" },
+            TUMENBASY: { min: 1400, max: 1599, name: "Түменбасы", nameKz: "Түменбасы", icon: "🏹", description: "Темник, командир десяти тысяч" },
+            AKSAKAT: { min: 1600, max: 1799, name: "Ақсақал", nameKz: "Ақсақал", icon: "👴", description: "Мудрый старейшина" },
+            BIY: { min: 1800, max: 1999, name: "Би", nameKz: "Би", icon: "⚖️", description: "Справедливый судья" },
+            SULTAN: { min: 2000, max: 2199, name: "Сұлтан", nameKz: "Сұлтан", icon: "👑", description: "Благородный правитель" },
+            BEGLERBEG: { min: 2200, max: 2399, name: "Беклярбек", nameKz: "Беклярбек", icon: "🏛️", description: "Наместник султана, правитель области" },
+            KHAN: { min: 2400, max: 2599, name: "Хан", nameKz: "Хан", icon: "🌟", description: "Великий хан" },
+            LEGEND: { min: 2600, max: 2800, name: "Аңыз", nameKz: "Аңыз", icon: "💫", description: "Легенда белки" }
         };
         // No need to load stats from file anymore
     }
@@ -142,9 +159,9 @@ class StatsService {
             const newELO = Math.round(playerELO + modifiedELOChange);
             const newChatELO = Math.round(playerChatELO + modifiedELOChange);
 
-            // Ограничиваем ELO в разумных пределах (500-2500)
-            const clampedELO = Math.min(Math.max(newELO, 500), 2500);
-            const clampedChatELO = Math.min(Math.max(newChatELO, 500), 2500);
+            // Ограничиваем ELO в разумных пределах (500-2800)
+                    const clampedELO = Math.min(Math.max(newELO, 500), 2800);
+        const clampedChatELO = Math.min(Math.max(newChatELO, 500), 2800);
 
             // Обновляем глобальный ELO
             await client.query(`
@@ -574,6 +591,51 @@ class StatsService {
         finally {
             client.release();
         }
+    }
+
+    // Определение ранга по ELO
+    getRankByELO(elo) {
+        for (const rank of Object.values(this.ELO_RANKS)) {
+            if (elo >= rank.min && elo <= rank.max) {
+                return rank;
+            }
+        }
+        // Если ЭЛО выше максимального, возвращаем высший ранг
+        return this.ELO_RANKS.LEGEND;
+    }
+
+    // Получение прогресса до следующего ранга
+    getRankProgress(elo) {
+        const currentRank = this.getRankByELO(elo);
+        const ranks = Object.values(this.ELO_RANKS);
+        const currentIndex = ranks.findIndex(rank => rank.min === currentRank.min);
+        const nextRank = currentIndex < ranks.length - 1 ? ranks[currentIndex + 1] : null;
+        
+        if (!nextRank) {
+            return {
+                current: currentRank,
+                next: null,
+                progress: 100,
+                eloToNext: 0
+            };
+        }
+
+        const eloInCurrentRank = elo - currentRank.min;
+        const rankRange = currentRank.max - currentRank.min + 1;
+        const progress = Math.min(100, Math.round((eloInCurrentRank / rankRange) * 100));
+        const eloToNext = nextRank.min - elo;
+
+        return {
+            current: currentRank,
+            next: nextRank,
+            progress,
+            eloToNext: Math.max(0, eloToNext)
+        };
+    }
+
+    // Получение списка всех рангов для отображения
+    getAllRanks() {
+        return Object.values(this.ELO_RANKS);
     }
 }
 exports.StatsService = StatsService;
