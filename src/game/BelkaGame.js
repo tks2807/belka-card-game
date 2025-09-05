@@ -195,13 +195,47 @@ class BelkaGame {
         const cardsPerPlayer = 8;
         for (const player of this.state.players) {
             player.cards = this.state.deck.splice(0, cardsPerPlayer);
-            player.cards.sort((a, b) => {
-                if (a.suit === b.suit) {
-                    return a.value - b.value;
-                }
-                return a.suit.localeCompare(b.suit);
-            });
+            this.sortPlayerHand(player.cards);
         }
+    }
+
+    // Сортировка карт в руке игрока
+    sortPlayerHand(cards) {
+        cards.sort((a, b) => {
+            const aIsJack = a.rank === 'J';
+            const bIsJack = b.rank === 'J';
+            const aTrump = a.suit === this.state.trump || aIsJack; // Валеты всегда козыри
+            const bTrump = b.suit === this.state.trump || bIsJack; // Валеты всегда козыри
+
+            // Если одна карта козырь, а другая нет - козыри в конец
+            if (aTrump && !bTrump) return 1;
+            if (!aTrump && bTrump) return -1;
+
+            // Если обе карты некозырные - сортируем по масти, затем по силе (от старших к младшим)
+            if (!aTrump && !bTrump) {
+                if (a.suit !== b.suit) {
+                    return a.suit.localeCompare(b.suit);
+                }
+                return this.getCardValue(b) - this.getCardValue(a); // Обратный порядок для убывания
+            }
+
+            // Если обе карты козыри - особая логика сортировки
+            if (aTrump && bTrump) {
+                // Если один валет, а другой нет - валеты вперед
+                if (aIsJack && !bIsJack) return -1;
+                if (!aIsJack && bIsJack) return 1;
+
+                // Если оба валета - сортируем по иерархии валетов (от сильного к слабому)
+                if (aIsJack && bIsJack) {
+                    return this.getJackValue(b.suit) - this.getJackValue(a.suit);
+                }
+
+                // Если обе карты обычные козыри - по силе (от старших к младшим)
+                return this.getCardValue(b) - this.getCardValue(a);
+            }
+
+            return 0;
+        });
     }
     async makeMove(playerId, cardIndex) {
         // Проверка, активна ли игра
@@ -261,6 +295,8 @@ class BelkaGame {
         }
         // Удаляем карту из руки игрока
         player.cards.splice(cardIndex, 1);
+        // Пересортировываем оставшиеся карты
+        this.sortPlayerHand(player.cards);
         // Добавляем карту на стол
         this.state.tableCards.push({ card, playerId });
         // Если все игроки сделали ходы, разрешаем раунд
@@ -992,7 +1028,7 @@ class BelkaGame {
         // Добавляем голос
         this.state.endVotes.add(playerId);
         const votesCount = this.state.endVotes.size;
-        const requiredVotes = Math.ceil(this.state.players.length / 2);
+        const requiredVotes = 3; // Требуется 3 голоса из 4 игроков
         const gameEnded = votesCount >= requiredVotes;
         if (gameEnded) {
             // Определяем победителя по текущему счету
