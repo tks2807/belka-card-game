@@ -298,10 +298,7 @@ bot.telegram.setMyCommands([
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
     { command: 'ranks', description: 'Показать систему рангов' },
-    { command: 'myrank', description: 'Мой ранг в этом чате' },
-    { command: 'seasons', description: 'Показать сезонные данные' },
-    { command: 'seasonleader', description: 'Показать лидеров сезона' },
-    { command: 'myseasons', description: 'Мои сезонные данные' }
+    { command: 'myrank', description: 'Мой ранг в этом чате' }
 ]).then(() => {
     // Включаем инлайн-режим
     return bot.telegram.setWebhook(''); // Сбрасываем вебхук для long polling
@@ -1337,11 +1334,6 @@ bot.command('help', (ctx) => {
 /ranks - Система рангов
 /myrank - Мой ранг в этом чате
 
-🏆 *Сезоны:*
-/seasons - Список всех сезонов
-/seasonleaders <название> - Лидеры сезона
-/myseasons - Моя история по сезонам
-
 ℹ️ *Информация:*
 /help - Эта справка
 /warmuty - Благодарности
@@ -1392,117 +1384,7 @@ bot.command('myrank', async (ctx) => {
     message += '💪 Продолжайте играть в этом чате для повышения рейтинга!';
     await ctx.reply(message, { parse_mode: 'Markdown' });
 });
-// Команда для просмотра сезонов
-bot.command('seasons', async (ctx) => {
-    const statsService = new StatsService_1.StatsService();
-    try {
-        const seasons = await statsService.getAllSeasons();
-        const currentSeason = await statsService.getCurrentSeason();
-        let message = `🏆 *СЕЗОНЫ ИГРЫ* 🏆\n\n`;
-        message += `🎮 **Текущий сезон:** ${currentSeason.season_name}\n`;
-        message += `📅 Начат: ${new Date(currentSeason.started_at).toLocaleDateString('ru-RU')}\n\n`;
-        if (seasons.length > 0) {
-            message += `📜 **История сезонов:**\n`;
-            seasons.forEach((season, index) => {
-                const status = season.is_current ? '🟢 Активный' : '🔴 Завершен';
-                const startDate = new Date(season.started_at).toLocaleDateString('ru-RU');
-                const endDate = season.ended_at ? new Date(season.ended_at).toLocaleDateString('ru-RU') : 'В процессе';
-                message += `\n${index + 1}. **${season.season_name}** ${status}\n`;
-                message += `   📅 ${startDate} - ${endDate}\n`;
-                if (season.description) {
-                    message += `   📝 ${season.description}\n`;
-                }
-            });
-        }
-        message += `\n💡 Используйте /seasonleaders <название> для просмотра лидеров сезона`;
-        await ctx.reply(message, { parse_mode: 'Markdown' });
-    }
-    catch (error) {
-        console.error('Error getting seasons:', error);
-        await ctx.reply('❌ Ошибка при получении информации о сезонах');
-    }
-});
-// Команда для просмотра лидеров сезона
-bot.command('seasonleaders', async (ctx) => {
-    const statsService = new StatsService_1.StatsService();
-    const args = ctx.message?.text?.split(' ').slice(1);
-    const seasonName = args?.join(' ') || 'Season 1';
-    const chatId = ctx.chat?.id;
-    const isGroupChat = chatId && chatId < 0;
-    try {
-        const leaders = await statsService.getSeasonLeaderboard(seasonName, isGroupChat ? chatId : undefined, 10);
-        if (leaders.length === 0) {
-            await ctx.reply(`❌ Не найдено данных для сезона "${seasonName}"\n\n💡 Используйте /seasons для просмотра доступных сезонов`);
-            return;
-        }
-        let message = `🏆 *ЛИДЕРЫ СЕЗОНА "${seasonName.toUpperCase()}"* 🏆\n`;
-        if (isGroupChat) {
-            message += `📍 *В этом чате*\n\n`;
-        }
-        else {
-            message += `🌍 *Глобальный рейтинг*\n\n`;
-        }
-        leaders.forEach((player, index) => {
-            const position = index + 1;
-            const emoji = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : '🏅';
-            const winRate = Number(player.win_rate) || 0;
-            const avgScore = Number(player.avg_score_per_round) || 0;
-            message += `${emoji} **${position}. ${player.username}**\n`;
-            message += `   🎖 ELO: ${player.final_elo_rating}\n`;
-            message += `   🎮 Игр: ${player.games_played} (${winRate.toFixed(1)}% побед)\n`;
-            message += `   📊 Ср. очки/раунд: ${avgScore.toFixed(1)}\n\n`;
-        });
-        message += `📊 *Минимум 5 игр для попадания в рейтинг*`;
-        await ctx.reply(message, { parse_mode: 'Markdown' });
-    }
-    catch (error) {
-        console.error('Error getting season leaders:', error);
-        await ctx.reply('❌ Ошибка при получении лидеров сезона');
-    }
-});
-// Команда для просмотра истории игрока по сезонам
-bot.command('myseasons', async (ctx) => {
-    const userId = ctx.from?.id;
-    const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
-    if (!userId) {
-        await ctx.reply('Не удалось определить пользователя.');
-        return;
-    }
-    const statsService = new StatsService_1.StatsService();
-    try {
-        const history = await statsService.getSeasonHistory(userId);
-        if (history.length === 0) {
-            await ctx.reply(`${username}, у вас пока нет истории в прошлых сезонах.\n\n🎮 Начните играть, чтобы попасть в следующую историю сезонов!`);
-            return;
-        }
-        let message = `📜 *ВАША ИСТОРИЯ СЕЗОНОВ, ${username.toUpperCase()}* 📜\n\n`;
-        history.forEach((season, index) => {
-            const winRate = Number(season.win_rate) || 0;
-            const avgScore = Number(season.avg_score_per_round) || 0;
-            const avgTricks = Number(season.avg_tricks_per_round) || 0;
-            const endDate = new Date(season.ended_at).toLocaleDateString('ru-RU');
-            message += `🏆 **${season.season_name}** (завершен ${endDate})\n`;
-            message += `   🎖 Финальный ELO: ${season.final_elo_rating}\n`;
-            message += `   🎮 Игр: ${season.games_played} (${winRate.toFixed(1)}% побед)\n`;
-            message += `   📊 Ср. за раунд: ${avgScore.toFixed(1)} очков, ${avgTricks.toFixed(1)} взяток\n`;
-            if (season.eggs_count > 0) {
-                message += `   🥚 Яиц: ${season.eggs_count}\n`;
-            }
-            if (season.golaya_count > 0) {
-                message += `   💎 Голых: ${season.golaya_count}\n`;
-            }
-            message += '\n';
-        });
-        const currentSeason = await statsService.getCurrentSeason();
-        message += `🎮 *Текущий сезон:* ${currentSeason.season_name}\n`;
-        message += `💪 Продолжайте играть для улучшения результатов!`;
-        await ctx.reply(message, { parse_mode: 'Markdown' });
-    }
-    catch (error) {
-        console.error('Error getting player season history:', error);
-        await ctx.reply('❌ Ошибка при получении истории сезонов');
-    }
-});
+
 // Функция для форматирования карт игрока
 function formatPlayerCards(player, state) {
     // Группировка и сортировка карт по масти
