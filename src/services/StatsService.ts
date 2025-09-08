@@ -156,8 +156,8 @@ export class StatsService {
         try {
             const result = await client.query(`
                 SELECT 
-                    CASE WHEN games_played > 0 THEN total_score::decimal / games_played ELSE 0 END as avg_score,
-                    CASE WHEN games_played > 0 THEN total_tricks::decimal / games_played ELSE 0 END as avg_tricks
+                    CASE WHEN total_rounds > 0 THEN total_score::decimal / total_rounds ELSE 0 END as avg_score,
+                    CASE WHEN total_rounds > 0 THEN total_tricks::decimal / total_rounds ELSE 0 END as avg_tricks
                 FROM global_stats 
                 WHERE player_id = $1
             `, [playerId]);
@@ -293,7 +293,8 @@ export class StatsService {
       eggs: boolean,
       golaya: boolean,
       chatId: number,
-      countGame: boolean = true
+      countGame: boolean = true,
+      rounds: number = 0
   ): Promise<void> {
       const client = await pool.connect();
        const gamesPlayedInc = countGame ? 1 : 0;
@@ -312,21 +313,23 @@ export class StatsService {
           // Update global stats
           await client.query(`
               INSERT INTO global_stats 
-              (player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
-              VALUES ($1, $2, $3, $4, $5, $6, $7)
+              (player_id, games_played, games_won, total_score, total_tricks, total_rounds, eggs_count, golaya_count) 
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
               ON CONFLICT (player_id) DO UPDATE SET
               games_played = global_stats.games_played + $2,
               games_won = global_stats.games_won + $3,
               total_score = global_stats.total_score + $4,
               total_tricks = global_stats.total_tricks + $5,
-              eggs_count = global_stats.eggs_count + $6,
-              golaya_count = global_stats.golaya_count + $7
+              total_rounds = global_stats.total_rounds + $6,
+              eggs_count = global_stats.eggs_count + $7,
+              golaya_count = global_stats.golaya_count + $8
           `, [
                playerId,
                gamesPlayedInc,
                gamesWonInc,
                score,
                tricks,
+               rounds,
                eggsInc,
                golayaInc
           ]);
@@ -334,15 +337,16 @@ export class StatsService {
           // Update chat stats
           await client.query(`
               INSERT INTO chat_stats 
-              (chat_id, player_id, games_played, games_won, total_score, total_tricks, eggs_count, golaya_count) 
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              (chat_id, player_id, games_played, games_won, total_score, total_tricks, total_rounds, eggs_count, golaya_count) 
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
               ON CONFLICT (chat_id, player_id) DO UPDATE SET
               games_played = chat_stats.games_played + $3,
               games_won = chat_stats.games_won + $4,
               total_score = chat_stats.total_score + $5,
               total_tricks = chat_stats.total_tricks + $6,
-              eggs_count = chat_stats.eggs_count + $7,
-              golaya_count = chat_stats.golaya_count + $8
+              total_rounds = chat_stats.total_rounds + $7,
+              eggs_count = chat_stats.eggs_count + $8,
+              golaya_count = chat_stats.golaya_count + $9
           `, [
               chatId,
               playerId,
@@ -350,6 +354,7 @@ export class StatsService {
               gamesWonInc,
               score,
               tricks,
+              rounds,
               eggsInc,
               golayaInc
           ]);
@@ -692,4 +697,184 @@ export class StatsService {
             client.release();
         }
     }
+
+    // Получение статистики предыдущих сезонов
+    public async getSeasonHistory(playerId: number, season?: string): Promise<any[]> {
+        const client = await pool.connect();
+        try {
+            let query = `
+                SELECT 
+                    season_name,
+                    ended_at,
+                    games_played,
+                    games_won,
+                    total_score,
+                    total_tricks,
+                    total_rounds,
+                    eggs_count,
+                    golaya_count,
+                    final_elo_rating,
+                    win_rate,
+                    avg_score_per_round,
+                    avg_tricks_per_round
+                FROM global_stats_history 
+                WHERE player_id = $1
+            `;
+            
+            const params: any[] = [playerId];
+            
+            if (season) {
+                query += ` AND season_name = $2`;
+                params.push(season);
+            }
+            
+            query += ` ORDER BY ended_at DESC`;
+            
+            const result = await client.query(query, params);
+            return result.rows;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Получение статистики чата по сезонам
+    public async getChatSeasonHistory(chatId: number, playerId?: number, season?: string): Promise<any[]> {
+        const client = await pool.connect();
+        try {
+            let query = `
+                SELECT 
+                    season_name,
+                    ended_at,
+                    player_id,
+                    username,
+                    games_played,
+                    games_won,
+                    total_score,
+                    total_tricks,
+                    total_rounds,
+                    eggs_count,
+                    golaya_count,
+                    final_elo_rating,
+                    win_rate,
+                    avg_score_per_round,
+                    avg_tricks_per_round
+                FROM chat_stats_history 
+                WHERE chat_id = $1
+            `;
+            
+            const params: any[] = [chatId];
+            
+            if (playerId) {
+                query += ` AND player_id = $${params.length + 1}`;
+                params.push(playerId);
+            }
+            
+            if (season) {
+                query += ` AND season_name = $${params.length + 1}`;
+                params.push(season);
+            }
+            
+            query += ` ORDER BY ended_at DESC, final_elo_rating DESC`;
+            
+            const result = await client.query(query, params);
+            return result.rows;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Получение списка всех сезонов
+    public async getAllSeasons(): Promise<any[]> {
+        const client = await pool.connect();
+        try {
+            const result = await client.query(`
+                SELECT 
+                    season_name,
+                    started_at,
+                    ended_at,
+                    is_current,
+                    description
+                FROM seasons 
+                ORDER BY started_at DESC
+            `);
+            return result.rows;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Получение текущего сезона
+    public async getCurrentSeason(): Promise<any> {
+        const client = await pool.connect();
+        try {
+            const result = await client.query(`
+                SELECT 
+                    season_name,
+                    started_at,
+                    description
+                FROM seasons 
+                WHERE is_current = true
+                LIMIT 1
+            `);
+            return result.rows[0] || { season_name: 'Season 2', started_at: new Date(), description: 'Текущий сезон' };
+        } finally {
+            client.release();
+        }
+    }
+
+    // Получение топ игроков по сезонам
+    public async getSeasonLeaderboard(season: string, chatId?: number, limit: number = 10): Promise<any[]> {
+        const client = await pool.connect();
+        try {
+            let query, params;
+            
+            if (chatId) {
+                query = `
+                    SELECT 
+                        username,
+                        player_id,
+                        games_played,
+                        games_won,
+                        win_rate,
+                        final_elo_rating,
+                        avg_score_per_round,
+                        avg_tricks_per_round,
+                        total_score,
+                        total_tricks,
+                        total_rounds
+                    FROM chat_stats_history 
+                    WHERE season_name = $1 AND chat_id = $2 AND games_played >= 5
+                    ORDER BY final_elo_rating DESC, games_played DESC
+                    LIMIT $3
+                `;
+                params = [season, chatId, limit];
+            } else {
+                query = `
+                    SELECT 
+                        username,
+                        player_id,
+                        games_played,
+                        games_won,
+                        win_rate,
+                        final_elo_rating,
+                        avg_score_per_round,
+                        avg_tricks_per_round,
+                        total_score,
+                        total_tricks,
+                        total_rounds
+                    FROM global_stats_history 
+                    WHERE season_name = $1 AND games_played >= 5
+                    ORDER BY final_elo_rating DESC, games_played DESC
+                    LIMIT $2
+                `;
+                params = [season, limit];
+            }
+            
+            const result = await client.query(query, params);
+            return result.rows;
+        } finally {
+            client.release();
+        }
+    }
+
 } 

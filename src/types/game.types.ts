@@ -13,6 +13,7 @@ export interface Player {
     cards: Card[];
     score: number;
     tricks: number;
+    totalTricks: number; // Общие взятки за всю игру
     chatId: number;
 }
 

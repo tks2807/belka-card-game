@@ -20,14 +20,18 @@ interface ExtendedGameState {
         team1: {
             players: Player[];
             score: number;    // Очки в текущей раздаче
-            tricks: number;   // Количество взяток
+            tricks: number;   // Количество взяток в текущей раздаче
             eyes: number;     // Количество "глаз"
+            totalScore: number;   // Общие очки за всю игру
+            totalTricks: number;  // Общие взятки за всю игру
         };
         team2: {
             players: Player[];
             score: number;
             tricks: number;
             eyes: number;
+            totalScore: number;   // Общие очки за всю игру
+            totalTricks: number;  // Общие взятки за всю игру
         };
     };
     clubJackHolder: Player | null; // Держатель валета крести
@@ -60,13 +64,17 @@ export class BelkaGame {
                     players: [],
                     score: 0,
                     tricks: 0,
-                    eyes: 0
+                    eyes: 0,
+                    totalScore: 0,
+                    totalTricks: 0
                 },
                 team2: {
                     players: [],
                     score: 0,
                     tricks: 0,
-                    eyes: 0
+                    eyes: 0,
+                    totalScore: 0,
+                    totalTricks: 0
                 }
             },
             clubJackHolder: null,
@@ -170,6 +178,7 @@ export class BelkaGame {
             cards: [],
             score: 0,
             tricks: 0,
+            totalTricks: 0,
             chatId: this.state.chatId
         };
 
@@ -672,6 +681,11 @@ export class BelkaGame {
         this.state.teams.team2.score = 0;
         this.state.teams.team2.tricks = 0;
 
+        // Сбрасываем индивидуальные взятки игроков для нового раунда
+        for (const player of this.state.players) {
+            player.tricks = 0;
+        }
+
         // Передаем первый ход следующему игроку по порядку
         // Раунд 1 - игрок 0, Раунд 2 - игрок 1, Раунд 3 - игрок 2, Раунд 4 - игрок 3, Раунд 5 - снова игрок 0 и т.д.
         this.state.currentPlayerIndex = (this.state.currentRound - 1) % this.state.players.length;
@@ -770,6 +784,17 @@ export class BelkaGame {
         let team1Eyes = 0;
         let team2Eyes = 0;
 
+        // Накапливаем общие очки и взятки за всю игру перед проверками
+        this.state.teams.team1.totalScore += this.state.teams.team1.score;
+        this.state.teams.team1.totalTricks += this.state.teams.team1.tricks;
+        this.state.teams.team2.totalScore += this.state.teams.team2.score;
+        this.state.teams.team2.totalTricks += this.state.teams.team2.tricks;
+
+        // Накапливаем индивидуальные взятки игроков
+        for (const player of this.state.players) {
+            player.totalTricks += player.tricks || 0;
+        }
+
         // Проверка на "голую" (все взятки + 120 очков)
         if (this.state.teams.team1.score === 120 && this.state.teams.team2.tricks === 0) {
             await this.endGame(true, 1);
@@ -796,7 +821,8 @@ export class BelkaGame {
                     true,  // isEggs = true
                     false, // isGolden
                     this.state.chatId,
-                    false
+                    false,
+                    0      // не добавляем раунды для яиц
                 );
             }
             // Просто переигрываем раунд
@@ -807,6 +833,11 @@ export class BelkaGame {
             this.state.teams.team1.tricks = 0;
             this.state.teams.team2.score = 0;
             this.state.teams.team2.tricks = 0;
+
+            // Сбрасываем индивидуальные взятки игроков для переигровки
+            for (const player of this.state.players) {
+                player.tricks = 0;
+            }
             // Создаем новую колоду и раздаем карты
             this.state.deck = this.createDeck();
             this.dealCards();
@@ -1048,12 +1079,13 @@ export class BelkaGame {
                     player.id,
                     player.username,
                     true,
-                    winningTeamData.score,
-                    player.tricks || 0, // Для общей статистики оставляем индивидуальные взятки
+                    winningTeamData.totalScore, // Используем общие очки за всю игру
+                    player.totalTricks || 0, // Используем общие взятки игрока за всю игру
                     false,
                     isGolden,
                     this.state.chatId,
-                    true
+                    true,
+                    this.state.currentRound // Передаем количество раундов в игре
                 );
 
                 // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
@@ -1066,8 +1098,8 @@ export class BelkaGame {
                     player.id,
                     player.username,
                     true,
-                    winningTeamData.score,
-                    winningTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
+                    winningTeamData.totalScore, // Используем общие очки за всю игру
+                    winningTeamData.totalTricks, // Используем общие взятки за всю игру
                     isGolden,
                     teammateELO,
                     opponent1ELO,
@@ -1082,12 +1114,13 @@ export class BelkaGame {
                     player.id,
                     player.username,
                     false,
-                    losingTeamData.score,
-                    player.tricks || 0, // Для общей статистики оставляем индивидуальные взятки
+                    losingTeamData.totalScore, // Используем общие очки за всю игру
+                    player.totalTricks || 0, // Используем общие взятки игрока за всю игру
                     false,
                     false,
                     this.state.chatId,
-                    true
+                    true,
+                    this.state.currentRound // Передаем количество раундов в игре
                 );
 
                 // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
@@ -1100,8 +1133,8 @@ export class BelkaGame {
                     player.id,
                     player.username,
                     false,
-                    losingTeamData.score,
-                    losingTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
+                    losingTeamData.totalScore, // Используем общие очки за всю игру
+                    losingTeamData.totalTricks, // Используем общие взятки за всю игру
                     false,
                     teammateELO,
                     opponent1ELO,

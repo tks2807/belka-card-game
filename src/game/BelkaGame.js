@@ -1,19 +1,9 @@
 "use strict";
-var __rest = (this && this.__rest) || function (s, e) {
-    var t = {};
-    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-        t[p] = s[p];
-    if (s != null && typeof Object.getOwnPropertySymbols === "function")
-        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-                t[p[i]] = s[p[i]];
-        }
-    return t;
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BelkaGame = void 0;
+const tslib_1 = require("tslib");
 const StatsService_1 = require("../services/StatsService");
-const crypto = require("crypto");
+const crypto = tslib_1.__importStar(require("crypto"));
 class BelkaGame {
     constructor(chatId) {
         this.statsService = new StatsService_1.StatsService();
@@ -33,13 +23,17 @@ class BelkaGame {
                     players: [],
                     score: 0,
                     tricks: 0,
-                    eyes: 0
+                    eyes: 0,
+                    totalScore: 0,
+                    totalTricks: 0
                 },
                 team2: {
                     players: [],
                     score: 0,
                     tricks: 0,
-                    eyes: 0
+                    eyes: 0,
+                    totalScore: 0,
+                    totalTricks: 0
                 }
             },
             clubJackHolder: null,
@@ -124,7 +118,14 @@ class BelkaGame {
         if (this.state.isActive || this.state.players.length >= 4) {
             return false;
         }
-        const newPlayer = Object.assign(Object.assign({}, player), { cards: [], score: 0, tricks: 0, chatId: this.state.chatId });
+        const newPlayer = {
+            ...player,
+            cards: [],
+            score: 0,
+            tricks: 0,
+            totalTricks: 0,
+            chatId: this.state.chatId
+        };
         this.state.players.push(newPlayer);
         // Распределяем игроков по командам
         if (this.state.players.length === 1 || this.state.players.length === 3) {
@@ -136,7 +137,6 @@ class BelkaGame {
         return true;
     }
     startGame(mode = 'belka') {
-        var _a;
         if (this.state.isActive) {
             return "Игра уже запущена!";
         }
@@ -187,7 +187,7 @@ class BelkaGame {
         this.setupPlayerSuitMap();
         // Определяем козырь для первого раунда (всегда крести)
         this.state.trump = '♣';
-        console.log(`[LOG] Инициализация игры завершена. Козырь: ${this.state.trump}, держатель валета крести: ${((_a = this.state.clubJackHolder) === null || _a === void 0 ? void 0 : _a.username) || 'не найден'}`);
+        console.log(`[LOG] Инициализация игры завершена. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
         // Возвращаем информацию о начальном состоянии игры
         return this.getGameSummary();
     }
@@ -198,7 +198,6 @@ class BelkaGame {
             // Сортировку выполняем только после определения козыря
         }
     }
-
     // Сортировка карт в руке игрока
     sortPlayerHand(cards) {
         cards.sort((a, b) => {
@@ -206,11 +205,11 @@ class BelkaGame {
             const bIsJack = b.rank === 'J';
             const aTrump = a.suit === this.state.trump || aIsJack; // Валеты всегда козыри
             const bTrump = b.suit === this.state.trump || bIsJack; // Валеты всегда козыри
-
             // Если одна карта козырь, а другая нет - козыри в конец
-            if (aTrump && !bTrump) return 1;
-            if (!aTrump && bTrump) return -1;
-
+            if (aTrump && !bTrump)
+                return 1;
+            if (!aTrump && bTrump)
+                return -1;
             // Если обе карты некозырные - сортируем по масти, затем по силе (от старших к младшим)
             if (!aTrump && !bTrump) {
                 if (a.suit !== b.suit) {
@@ -218,22 +217,20 @@ class BelkaGame {
                 }
                 return this.getCardValue(b) - this.getCardValue(a); // Обратный порядок для убывания
             }
-
             // Если обе карты козыри - особая логика сортировки
             if (aTrump && bTrump) {
                 // Если один валет, а другой нет - валеты вперед
-                if (aIsJack && !bIsJack) return -1;
-                if (!aIsJack && bIsJack) return 1;
-
+                if (aIsJack && !bIsJack)
+                    return -1;
+                if (!aIsJack && bIsJack)
+                    return 1;
                 // Если оба валета - сортируем по иерархии валетов (от сильного к слабому)
                 if (aIsJack && bIsJack) {
                     return this.getJackValue(b.suit) - this.getJackValue(a.suit);
                 }
-
                 // Если обе карты обычные козыри - по силе (от старших к младшим)
                 return this.getCardValue(b) - this.getCardValue(a);
             }
-
             return 0;
         });
     }
@@ -548,7 +545,6 @@ class BelkaGame {
         return points;
     }
     startNewRound() {
-        var _a;
         // Увеличиваем номер раунда
         this.state.currentRound++;
         console.log(`[LOG] Начинается раунд ${this.state.currentRound}`);
@@ -557,6 +553,10 @@ class BelkaGame {
         this.state.teams.team1.tricks = 0;
         this.state.teams.team2.score = 0;
         this.state.teams.team2.tricks = 0;
+        // Сбрасываем индивидуальные взятки игроков для нового раунда
+        for (const player of this.state.players) {
+            player.tricks = 0;
+        }
         // Передаем первый ход следующему игроку по порядку
         // Раунд 1 - игрок 0, Раунд 2 - игрок 1, Раунд 3 - игрок 2, Раунд 4 - игрок 3, Раунд 5 - снова игрок 0 и т.д.
         this.state.currentPlayerIndex = (this.state.currentRound - 1) % this.state.players.length;
@@ -600,7 +600,7 @@ class BelkaGame {
         for (const player of this.state.players) {
             this.sortPlayerHand(player.cards);
         }
-        console.log(`[LOG] Раунд ${this.state.currentRound} инициализирован. Козырь: ${this.state.trump}, держатель валета крести: ${((_a = this.state.clubJackHolder) === null || _a === void 0 ? void 0 : _a.username) || 'не найден'}`);
+        console.log(`[LOG] Раунд ${this.state.currentRound} инициализирован. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
     }
     determineNewTrump() {
         // Находим игрока с валетом крести
@@ -641,6 +641,15 @@ class BelkaGame {
         // Инициализируем переменные для глаз
         let team1Eyes = 0;
         let team2Eyes = 0;
+        // Накапливаем общие очки и взятки за всю игру перед проверками
+        this.state.teams.team1.totalScore += this.state.teams.team1.score;
+        this.state.teams.team1.totalTricks += this.state.teams.team1.tricks;
+        this.state.teams.team2.totalScore += this.state.teams.team2.score;
+        this.state.teams.team2.totalTricks += this.state.teams.team2.tricks;
+        // Накапливаем индивидуальные взятки игроков
+        for (const player of this.state.players) {
+            player.totalTricks += player.tricks || 0;
+        }
         // Проверка на "голую" (все взятки + 120 очков)
         if (this.state.teams.team1.score === 120 && this.state.teams.team2.tricks === 0) {
             await this.endGame(true, 1);
@@ -661,7 +670,8 @@ class BelkaGame {
                 0, // взятки не важны
                 true, // isEggs = true
                 false, // isGolden
-                this.state.chatId, false);
+                this.state.chatId, false, 0 // не добавляем раунды для яиц
+                );
             }
             // Просто переигрываем раунд
             // Уменьшаем номер раунда на 1, чтобы при увеличении в startNewRound он остался тем же
@@ -671,6 +681,10 @@ class BelkaGame {
             this.state.teams.team1.tricks = 0;
             this.state.teams.team2.score = 0;
             this.state.teams.team2.tricks = 0;
+            // Сбрасываем индивидуальные взятки игроков для переигровки
+            for (const player of this.state.players) {
+                player.tricks = 0;
+            }
             // Создаем новую колоду и раздаем карты
             this.state.deck = this.createDeck();
             this.dealCards();
@@ -884,56 +898,38 @@ class BelkaGame {
                 const elo = await this.statsService.getPlayerELO(player.id);
                 playerELOs.set(player.id, elo);
             }
-
             // Получаем командные данные для передачи в рейтинг
             const winningTeamData = winningTeam === 1 ? this.state.teams.team1 : this.state.teams.team2;
             const losingTeamData = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
-
             // Обновляем статистику для победителей
             for (const player of winners) {
-                await this.statsService.updatePlayerStats(player.id, player.username, true, winningTeamData.score, player.tricks || 0, false, isGolden, this.state.chatId, true);
-                
+                await this.statsService.updatePlayerStats(player.id, player.username, true, winningTeamData.totalScore, // Используем общие очки за всю игру
+                player.totalTricks || 0, // Используем общие взятки игрока за всю игру
+                false, isGolden, this.state.chatId, true, this.state.currentRound // Передаем количество раундов в игре
+                );
                 // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
                 const teammate = winners.find(p => p.id !== player.id);
                 const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
                 const opponent1ELO = playerELOs.get(losers[0].id) || 1000;
                 const opponent2ELO = playerELOs.get(losers[1].id) || 1000;
-
-                await this.statsService.updateHybridRating(
-                    player.id,
-                    player.username,
-                    true,
-                    winningTeamData.score,
-                    winningTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
-                    isGolden,
-                    teammateELO,
-                    opponent1ELO,
-                    opponent2ELO,
-                    this.state.chatId
-                );
+                await this.statsService.updateHybridRating(player.id, player.username, true, winningTeamData.totalScore, // Используем общие очки за всю игру
+                winningTeamData.totalTricks, // Используем общие взятки за всю игру
+                isGolden, teammateELO, opponent1ELO, opponent2ELO, this.state.chatId);
             }
             // Обновляем статистику для проигравших
             for (const player of losers) {
-                await this.statsService.updatePlayerStats(player.id, player.username, false, losingTeamData.score, player.tricks || 0, false, false, this.state.chatId, true);
-                
+                await this.statsService.updatePlayerStats(player.id, player.username, false, losingTeamData.totalScore, // Используем общие очки за всю игру
+                player.totalTricks || 0, // Используем общие взятки игрока за всю игру
+                false, false, this.state.chatId, true, this.state.currentRound // Передаем количество раундов в игре
+                );
                 // Обновляем ELO с учетом противников (используем КОМАНДНЫЕ взятки для расчета рейтинга)
                 const teammate = losers.find(p => p.id !== player.id);
                 const teammateELO = teammate ? playerELOs.get(teammate.id) || 1000 : 1000;
                 const opponent1ELO = playerELOs.get(winners[0].id) || 1000;
                 const opponent2ELO = playerELOs.get(winners[1].id) || 1000;
-
-                await this.statsService.updateHybridRating(
-                    player.id,
-                    player.username,
-                    false,
-                    losingTeamData.score,
-                    losingTeamData.tricks, // КОМАНДНЫЕ взятки для расчета рейтинга
-                    false,
-                    teammateELO,
-                    opponent1ELO,
-                    opponent2ELO,
-                    this.state.chatId
-                );
+                await this.statsService.updateHybridRating(player.id, player.username, false, losingTeamData.totalScore, // Используем общие очки за всю игру
+                losingTeamData.totalTricks, // Используем общие взятки за всю игру
+                false, teammateELO, opponent1ELO, opponent2ELO, this.state.chatId);
             }
             if (isGolden) {
                 this.state.clubJackHolder = winners[0];
@@ -945,7 +941,7 @@ class BelkaGame {
     }
     getGameState() {
         // Возвращаем состояние игры без внутренних полей
-        const _a = this.state, { endVotes } = _a, gameState = __rest(_a, ["endVotes"]);
+        const { endVotes, ...gameState } = this.state;
         return gameState;
     }
     getGameSummary() {
@@ -1106,3 +1102,4 @@ class BelkaGame {
     }
 }
 exports.BelkaGame = BelkaGame;
+//# sourceMappingURL=BelkaGame.js.map
