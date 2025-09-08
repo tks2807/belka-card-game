@@ -353,7 +353,10 @@ bot.telegram.setMyCommands([
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
     { command: 'ranks', description: 'Показать систему рангов' },
-    { command: 'myrank', description: 'Мой ранг в этом чате' }
+    { command: 'myrank', description: 'Мой ранг в этом чате' },
+    { command: 'seasons', description: 'Показать сезонные данные' },
+    { command: 'seasonleader', description: 'Показать лидеров сезона' },
+    { command: 'myseasons', description: 'Мои сезонные данные' }
 ]).then(() => {
     // Включаем инлайн-режим
     return bot.telegram.setWebhook(''); // Сбрасываем вебхук для long polling
@@ -1597,12 +1600,12 @@ bot.command('seasonleaders', async (ctx) => {
         leaders.forEach((player, index) => {
             const position = index + 1;
             const emoji = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : '🏅';
-            const winRate = player.win_rate || 0;
-            const avgScore = player.avg_score_per_round || 0;
+            const winRate = Number(player.win_rate) || 0;
+            const avgScore = Number(player.avg_score_per_round) || 0;
             
             message += `${emoji} **${position}. ${player.username}**\n`;
             message += `   🎖 ELO: ${player.final_elo_rating}\n`;
-            message += `   🎮 Игр: ${player.games_played} (${winRate}% побед)\n`;
+            message += `   🎮 Игр: ${player.games_played} (${winRate.toFixed(1)}% побед)\n`;
             message += `   📊 Ср. очки/раунд: ${avgScore.toFixed(1)}\n\n`;
         });
         
@@ -1638,14 +1641,14 @@ bot.command('myseasons', async (ctx) => {
         let message = `📜 *ВАША ИСТОРИЯ СЕЗОНОВ, ${username.toUpperCase()}* 📜\n\n`;
         
         history.forEach((season, index) => {
-            const winRate = season.win_rate || 0;
-            const avgScore = season.avg_score_per_round || 0;
-            const avgTricks = season.avg_tricks_per_round || 0;
+            const winRate = Number(season.win_rate) || 0;
+            const avgScore = Number(season.avg_score_per_round) || 0;
+            const avgTricks = Number(season.avg_tricks_per_round) || 0;
             const endDate = new Date(season.ended_at).toLocaleDateString('ru-RU');
             
             message += `🏆 **${season.season_name}** (завершен ${endDate})\n`;
             message += `   🎖 Финальный ELO: ${season.final_elo_rating}\n`;
-            message += `   🎮 Игр: ${season.games_played} (${winRate}% побед)\n`;
+            message += `   🎮 Игр: ${season.games_played} (${winRate.toFixed(1)}% побед)\n`;
             message += `   📊 Ср. за раунд: ${avgScore.toFixed(1)} очков, ${avgTricks.toFixed(1)} взяток\n`;
             
             if (season.eggs_count > 0) {

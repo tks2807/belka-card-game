@@ -1,13 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const tslib_1 = require("tslib");
 const telegraf_1 = require("telegraf");
-const dotenv = require("dotenv");
+const dotenv = tslib_1.__importStar(require("dotenv"));
 const BelkaGame_1 = require("./game/BelkaGame");
 const StatsService_1 = require("./services/StatsService");
 const ChatManager_1 = require("./services/ChatManager");
-const setupDatabase_1 = require("./db/setupDatabase");
+const setupDatabase_1 = tslib_1.__importDefault(require("./db/setupDatabase"));
 const https_proxy_agent_1 = require("https-proxy-agent");
-const node_fetch_1 = require("node-fetch");
+const node_fetch_1 = tslib_1.__importDefault(require("node-fetch"));
 const socks_proxy_agent_1 = require("socks-proxy-agent");
 // Загружаем переменные окружения
 dotenv.config();
@@ -159,7 +160,6 @@ bot.telegram.sendSticker = async (chatId, sticker, extra) => {
 };
 // Добавляем обработчик ошибок для бота
 bot.catch((err, ctx) => {
-    var _a;
     console.error('Bot error:', err);
     // Если пользователь заблокировал бота, логируем и не прерываем работу
     if (err && typeof err === 'object' && 'description' in err &&
@@ -179,7 +179,7 @@ bot.catch((err, ctx) => {
         // Поиск нового ID чата в сообщении об ошибке
         const migrationMatch = err.description.match(/migrate to chat id (-\d+)/i);
         if (migrationMatch && migrationMatch[1]) {
-            const oldChatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+            const oldChatId = ctx.chat?.id;
             const newChatId = parseInt(migrationMatch[1], 10);
             console.log(`[MIGRATION] Обнаружена миграция чата из ${oldChatId} в супергруппу ${newChatId}`);
             if (oldChatId) {
@@ -200,7 +200,10 @@ bot.catch((err, ctx) => {
                         // Обновляем карты в хранилище
                         const playerInfo = playerCardsInPrivateChat.get(player.id);
                         if (playerInfo && playerInfo.gameId === oldChatId) {
-                            playerCardsInPrivateChat.set(player.id, Object.assign(Object.assign({}, playerInfo), { gameId: newChatId }));
+                            playerCardsInPrivateChat.set(player.id, {
+                                ...playerInfo,
+                                gameId: newChatId
+                            });
                         }
                     });
                     // Сообщаем об успешной миграции
@@ -295,7 +298,10 @@ bot.telegram.setMyCommands([
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
     { command: 'ranks', description: 'Показать систему рангов' },
-    { command: 'myrank', description: 'Мой ранг в этом чате' }
+    { command: 'myrank', description: 'Мой ранг в этом чате' },
+    { command: 'seasons', description: 'Показать сезонные данные' },
+    { command: 'seasonleader', description: 'Показать лидеров сезона' },
+    { command: 'myseasons', description: 'Мои сезонные данные' }
 ]).then(() => {
     // Включаем инлайн-режим
     return bot.telegram.setWebhook(''); // Сбрасываем вебхук для long polling
@@ -388,7 +394,6 @@ bot.on('inline_query', async (ctx) => {
 });
 // Безопасная отправка сообщений
 async function safeSendMessage(ctx, text, extra) {
-    var _a;
     try {
         return await ctx.reply(text, extra);
     }
@@ -416,7 +421,7 @@ async function safeSendMessage(ctx, text, extra) {
             error.parameters &&
             typeof error.parameters === 'object' &&
             'migrate_to_chat_id' in error.parameters) {
-            const oldChatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+            const oldChatId = ctx.chat?.id;
             const newChatId = error.parameters.migrate_to_chat_id;
             console.log(`[MIGRATION] Обнаружена миграция чата при выполнении команды: ${oldChatId} -> ${newChatId}`);
             // Сохраняем новое сопоставление
@@ -439,9 +444,8 @@ async function safeSendMessage(ctx, text, extra) {
 }
 // Обработчик команды /start
 bot.start(async (ctx) => {
-    var _a;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+        const chatId = ctx.chat?.id;
         if (!chatId)
             return;
         // Используем ChatManager для получения актуального ID чата
@@ -454,9 +458,8 @@ bot.start(async (ctx) => {
 });
 // Обработчик команды /help
 bot.help(async (ctx) => {
-    var _a;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+        const chatId = ctx.chat?.id;
         if (!chatId)
             return;
         // Используем ChatManager для получения актуального ID чата
@@ -476,8 +479,7 @@ bot.help(async (ctx) => {
 /ratingchat - Лидерборд этого чата
 /ranks - Система рангов
 /myrank - Мой персональный ранг
-
-
+image.png
 🎮 Управление игрой:
 /endgame - Проголосовать за завершение игры
 /clearbot - Сбросить текущую игру (в случае проблем)
@@ -517,15 +519,14 @@ bot.help(async (ctx) => {
 });
 // Обработчик команды /join
 bot.command('join', async (ctx) => {
-    var _a, _b, _c;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+        const chatId = ctx.chat?.id;
         if (!chatId)
             return;
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
-        const userId = (_b = ctx.from) === null || _b === void 0 ? void 0 : _b.id;
-        const username = ((_c = ctx.from) === null || _c === void 0 ? void 0 : _c.username) || `Player${userId}`;
+        const userId = ctx.from?.id;
+        const username = ctx.from?.username || `Player${userId}`;
         if (!userId) {
             await safeSendMessage(ctx, 'Не удалось определить пользователя');
             return;
@@ -617,9 +618,8 @@ bot.command('warmuty', async (ctx) => {
 });
 // Обработчик команды /startbelka
 bot.command('startbelka', async (ctx) => {
-    var _a;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+        const chatId = ctx.chat?.id;
         if (!chatId)
             return;
         // Используем ChatManager для получения актуального ID чата
@@ -677,9 +677,8 @@ bot.command('startbelka', async (ctx) => {
 });
 // Обработчик команды /startwalka
 bot.command('startwalka', async (ctx) => {
-    var _a;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+        const chatId = ctx.chat?.id;
         if (!chatId)
             return;
         // Используем ChatManager для получения актуального ID чата
@@ -737,9 +736,8 @@ bot.command('startwalka', async (ctx) => {
 });
 // Обработчик команды /state
 bot.command('state', async (ctx) => {
-    var _a;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+        const chatId = ctx.chat?.id;
         if (!chatId)
             return;
         // Используем ChatManager для получения актуального ID чата
@@ -778,7 +776,7 @@ bot.command('state', async (ctx) => {
 const statsService = new StatsService_1.StatsService();
 // --- Leaderboard Pagination ---
 const LEADERBOARD_LIMIT = 5;
-
+// Helper to send leaderboard (all) - старая версия
 // Helper to send improved leaderboard (all) - новая версия с комплексным рейтингом
 async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {
     console.log('sendLeaderboardAllImproved called with offset:', offset, 'isEdit:', isEdit);
@@ -794,21 +792,20 @@ async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {
         const s = stats;
         const position = offset + index + 1;
         const statusIcon = s.isQualified ? '🎯' : '🎲';
-        
         if (s.isQualified) {
             message += `*${position}. ${s.username}* ${statusIcon}\n` +
                 `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
                 `${s.rank.icon} Ранг: ${s.rank.name}\n` +
                 `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
                 `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
-        } else {
+        }
+        else {
             message += `*${position}. ${s.username}* ${statusIcon}\n` +
                 `📊 Рейтинг: ${s.winrate}% (${s.gamesPlayed} игр)\n` +
                 `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
                 `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
         }
     });
-
     // Navigation buttons
     const keyboard = [];
     if (offset > 0)
@@ -826,7 +823,6 @@ async function sendLeaderboardAllImproved(ctx, offset = 0, isEdit = false) {
         await ctx.reply(message, { reply_markup: replyMarkup, parse_mode: 'Markdown' });
     }
 }
-
 // Helper to send improved leaderboard (chat) - новая версия с комплексным рейтингом
 async function sendLeaderboardChatImproved(ctx, chatId, offset = 0, isEdit = false) {
     console.log('sendLeaderboardChatImproved called with chatId:', chatId, 'offset:', offset, 'isEdit:', isEdit);
@@ -842,21 +838,20 @@ async function sendLeaderboardChatImproved(ctx, chatId, offset = 0, isEdit = fal
         const s = stats;
         const position = offset + index + 1;
         const statusIcon = s.isQualified ? '🎯' : '🎲';
-        
         if (s.isQualified) {
             message += `*${position}. ${s.username}* ${statusIcon}\n` +
                 `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
                 `${s.rank.icon} Ранг: ${s.rank.name}\n` +
                 `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
                 `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
-        } else {
+        }
+        else {
             message += `*${position}. ${s.username}* ${statusIcon}\n` +
                 `📊 Рейтинг: ${s.winrate}% (${s.gamesPlayed} игр)\n` +
                 `🃏 Игры: ${s.gamesPlayed} | 🏆 Победы: ${s.gamesWon} (${s.winrate}%)\n` +
                 `🎖 Голые победы: ${s.golayaCount} | 🥚 Яйца: ${s.eggsCount}\n\n`;
         }
     });
-
     // Navigation buttons
     const keyboard = [];
     if (offset > 0)
@@ -883,8 +878,7 @@ bot.command('ratingall', async (ctx) => {
     await sendLeaderboardAllImproved(ctx, 0);
 });
 bot.command('ratingchat', async (ctx) => {
-    var _a;
-    const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+    const chatId = ctx.chat?.id;
     if (!chatId)
         return;
     const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
@@ -896,9 +890,8 @@ bot.action(/leaderboardallimproved:(\d+)/, async (ctx) => {
     await sendLeaderboardAllImproved(ctx, Math.max(0, offset), true);
 });
 bot.action(/leaderboardchatimproved:(\d+)/, async (ctx) => {
-    var _a;
     const offset = parseInt(ctx.match[1], 10) || 0;
-    const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+    const chatId = ctx.chat?.id;
     if (!chatId)
         return;
     const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
@@ -1204,10 +1197,9 @@ function findOptimalCardForAutoMove(player, gameState) {
 // });
 // Обработчик команды /endgame
 bot.command('endgame', async (ctx) => {
-    var _a, _b;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
-        const userId = (_b = ctx.from) === null || _b === void 0 ? void 0 : _b.id;
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
         if (!chatId || !userId)
             return;
         // Используем ChatManager для получения актуального ID чата
@@ -1268,14 +1260,13 @@ bot.command('endgame', async (ctx) => {
 });
 // Обработчик команды /clearbot
 bot.command('clearbot', async (ctx) => {
-    var _a, _b;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
+        const chatId = ctx.chat?.id;
         if (!chatId)
             return;
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
-        const userId = (_b = ctx.from) === null || _b === void 0 ? void 0 : _b.id;
+        const userId = ctx.from?.id;
         if (!userId) {
             await ctx.reply('Не удалось определить пользователя');
             return;
@@ -1314,76 +1305,28 @@ bot.command('clearbot', async (ctx) => {
         await ctx.reply('Произошла ошибка при сбросе игры');
     }
 });
-
 // Команда для отображения системы рангов
 bot.command('ranks', async (ctx) => {
     const statsService = new StatsService_1.StatsService();
     const allRanks = statsService.getAllRanks();
-    
     let message = '🏆 Система рангов белки 🏆\n\n';
     message += 'Ранги основаны на ELO рейтинге в казахском стиле:\n\n';
-    
     allRanks.forEach((rank) => {
         message += `${rank.icon} **${rank.name}**\n`;
         message += `📊 ELO: ${rank.min} - ${rank.max}\n`;
         message += `📝 ${rank.description}\n\n`;
     });
-    
     message += '💡 *Совет*: Играйте больше игр и побеждайте сильных противников для повышения рейтинга!';
-    
     await ctx.reply(message, { parse_mode: 'Markdown' });
 });
-
-// Команда для просмотра персонального ранга в чате
-bot.command('myrank', async (ctx) => {
-    const userId = ctx.from?.id;
-    const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
-    const chatId = ctx.chat?.id;
-    
-    if (!userId) {
-        await ctx.reply('Не удалось определить пользователя.');
-        return;
-    }
-    
-    if (!chatId || chatId > 0) {
-        await ctx.reply('❌ Эта команда работает только в групповых чатах.\n\n💡 Для просмотра глобального рейтинга используйте:\n/ratingall - общий лидерборд');
-        return;
-    }
-    
-    const statsService = new StatsService_1.StatsService();
-    
-    // Показываем только чат ELO
-    const playerELO = await statsService.getPlayerChatELO(userId, chatId);
-    const rank = statsService.getRankByELO(playerELO);
-    const progress = statsService.getRankProgress(playerELO);
-    
-    let message = `🎖 *Ваш ранг в этом чате, ${username}* 🎖\n\n`;
-    message += `${rank.icon} **${rank.name}**\n`;
-    message += `📊 ELO: ${playerELO}\n`;
-    message += `📝 ${rank.description}\n\n`;
-    
-    if (progress.next) {
-        const progressBar = '▓'.repeat(Math.floor(progress.progress / 10)) + '░'.repeat(10 - Math.floor(progress.progress / 10));
-        message += `📈 *Прогресс до ${progress.next.name}:*\n`;
-        message += `${progressBar} ${progress.progress}%\n`;
-        message += `🎯 Нужно еще: ${progress.eloToNext} ELO\n\n`;
-    } else {
-        message += `🌟 *Поздравляем!* Вы достигли максимального ранга!\n\n`;
-    }
-    
-    message += '💪 Продолжайте играть в этом чате для повышения рейтинга!';
-    
-    await ctx.reply(message, { parse_mode: 'Markdown' });
-});
-
 // Команда помощи
 bot.command('help', (ctx) => {
-  const helpMessage = `🎮 *Добро пожаловать в игру Белка!* 🎮
+    const helpMessage = `🎮 *Добро пожаловать в игру Белка!* 🎮
 
 🃏 *Команды игры:*
-/startgame - Начать новую игру
-/joingame - Присоединиться к игре
-/cards - Показать свои карты
+/startbelka - Начать игру Белка (до 12 глаз)
+/startwalka - Начать игру Шалқа (до 6 глаз) 
+/join - Присоединиться к игре
 /endgame - Проголосовать за завершение игры
 /clearbot - Сбросить игру
 
@@ -1394,13 +1337,18 @@ bot.command('help', (ctx) => {
 /ranks - Система рангов
 /myrank - Мой ранг в этом чате
 
+🏆 *Сезоны:*
+/seasons - Список всех сезонов
+/seasonleaders <название> - Лидеры сезона
+/myseasons - Моя история по сезонам
+
 ℹ️ *Информация:*
 /help - Эта справка
 /warmuty - Благодарности
 
 🎯 *Как играть:*
-1. Создайте игру командой /startgame
-2. Другие игроки присоединяются через /joingame
+1. Создайте игру командой /startbelka или /startwalka
+2. Другие игроки присоединяются через /join
 3. Когда наберется 4 игрока, игра начнется автоматически
 4. Используйте кнопки под картами для ходов
 
@@ -1408,13 +1356,155 @@ bot.command('help', (ctx) => {
 - Для участия в рейтинге нужно сыграть минимум 5 игр
 - ELO рейтинг учитывает силу противников и вашу игру
 - Казахские ранги от Сарт до Аңыз (/ranks)`;
-  
-  ctx.reply(helpMessage, { parse_mode: 'Markdown' });
+    ctx.reply(helpMessage, { parse_mode: 'Markdown' });
 });
-
+// Команда для просмотра персонального ранга в чате
+bot.command('myrank', async (ctx) => {
+    const userId = ctx.from?.id;
+    const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
+    const chatId = ctx.chat?.id;
+    if (!userId) {
+        await ctx.reply('Не удалось определить пользователя.');
+        return;
+    }
+    if (!chatId || chatId > 0) {
+        await ctx.reply('❌ Эта команда работает только в групповых чатах.\n\n💡 Для просмотра глобального рейтинга используйте:\n/ratingall - общий лидерборд');
+        return;
+    }
+    const statsService = new StatsService_1.StatsService();
+    // Показываем только чат ELO
+    const playerELO = await statsService.getPlayerChatELO(userId, chatId);
+    const rank = statsService.getRankByELO(playerELO);
+    const progress = statsService.getRankProgress(playerELO);
+    let message = `🎖 *Ваш ранг в этом чате, ${username}* 🎖\n\n`;
+    message += `${rank.icon} **${rank.name}**\n`;
+    message += `📊 ELO: ${playerELO}\n`;
+    message += `📝 ${rank.description}\n\n`;
+    if (progress.next) {
+        const progressBar = '▓'.repeat(Math.floor(progress.progress / 10)) + '░'.repeat(10 - Math.floor(progress.progress / 10));
+        message += `📈 *Прогресс до ${progress.next.name}:*\n`;
+        message += `${progressBar} ${progress.progress}%\n`;
+        message += `🎯 Нужно еще: ${progress.eloToNext} ELO\n\n`;
+    }
+    else {
+        message += `🌟 *Поздравляем!* Вы достигли максимального ранга!\n\n`;
+    }
+    message += '💪 Продолжайте играть в этом чате для повышения рейтинга!';
+    await ctx.reply(message, { parse_mode: 'Markdown' });
+});
+// Команда для просмотра сезонов
+bot.command('seasons', async (ctx) => {
+    const statsService = new StatsService_1.StatsService();
+    try {
+        const seasons = await statsService.getAllSeasons();
+        const currentSeason = await statsService.getCurrentSeason();
+        let message = `🏆 *СЕЗОНЫ ИГРЫ* 🏆\n\n`;
+        message += `🎮 **Текущий сезон:** ${currentSeason.season_name}\n`;
+        message += `📅 Начат: ${new Date(currentSeason.started_at).toLocaleDateString('ru-RU')}\n\n`;
+        if (seasons.length > 0) {
+            message += `📜 **История сезонов:**\n`;
+            seasons.forEach((season, index) => {
+                const status = season.is_current ? '🟢 Активный' : '🔴 Завершен';
+                const startDate = new Date(season.started_at).toLocaleDateString('ru-RU');
+                const endDate = season.ended_at ? new Date(season.ended_at).toLocaleDateString('ru-RU') : 'В процессе';
+                message += `\n${index + 1}. **${season.season_name}** ${status}\n`;
+                message += `   📅 ${startDate} - ${endDate}\n`;
+                if (season.description) {
+                    message += `   📝 ${season.description}\n`;
+                }
+            });
+        }
+        message += `\n💡 Используйте /seasonleaders <название> для просмотра лидеров сезона`;
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+    }
+    catch (error) {
+        console.error('Error getting seasons:', error);
+        await ctx.reply('❌ Ошибка при получении информации о сезонах');
+    }
+});
+// Команда для просмотра лидеров сезона
+bot.command('seasonleaders', async (ctx) => {
+    const statsService = new StatsService_1.StatsService();
+    const args = ctx.message?.text?.split(' ').slice(1);
+    const seasonName = args?.join(' ') || 'Season 1';
+    const chatId = ctx.chat?.id;
+    const isGroupChat = chatId && chatId < 0;
+    try {
+        const leaders = await statsService.getSeasonLeaderboard(seasonName, isGroupChat ? chatId : undefined, 10);
+        if (leaders.length === 0) {
+            await ctx.reply(`❌ Не найдено данных для сезона "${seasonName}"\n\n💡 Используйте /seasons для просмотра доступных сезонов`);
+            return;
+        }
+        let message = `🏆 *ЛИДЕРЫ СЕЗОНА "${seasonName.toUpperCase()}"* 🏆\n`;
+        if (isGroupChat) {
+            message += `📍 *В этом чате*\n\n`;
+        }
+        else {
+            message += `🌍 *Глобальный рейтинг*\n\n`;
+        }
+        leaders.forEach((player, index) => {
+            const position = index + 1;
+            const emoji = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : '🏅';
+            const winRate = Number(player.win_rate) || 0;
+            const avgScore = Number(player.avg_score_per_round) || 0;
+            message += `${emoji} **${position}. ${player.username}**\n`;
+            message += `   🎖 ELO: ${player.final_elo_rating}\n`;
+            message += `   🎮 Игр: ${player.games_played} (${winRate.toFixed(1)}% побед)\n`;
+            message += `   📊 Ср. очки/раунд: ${avgScore.toFixed(1)}\n\n`;
+        });
+        message += `📊 *Минимум 5 игр для попадания в рейтинг*`;
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+    }
+    catch (error) {
+        console.error('Error getting season leaders:', error);
+        await ctx.reply('❌ Ошибка при получении лидеров сезона');
+    }
+});
+// Команда для просмотра истории игрока по сезонам
+bot.command('myseasons', async (ctx) => {
+    const userId = ctx.from?.id;
+    const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
+    if (!userId) {
+        await ctx.reply('Не удалось определить пользователя.');
+        return;
+    }
+    const statsService = new StatsService_1.StatsService();
+    try {
+        const history = await statsService.getSeasonHistory(userId);
+        if (history.length === 0) {
+            await ctx.reply(`${username}, у вас пока нет истории в прошлых сезонах.\n\n🎮 Начните играть, чтобы попасть в следующую историю сезонов!`);
+            return;
+        }
+        let message = `📜 *ВАША ИСТОРИЯ СЕЗОНОВ, ${username.toUpperCase()}* 📜\n\n`;
+        history.forEach((season, index) => {
+            const winRate = Number(season.win_rate) || 0;
+            const avgScore = Number(season.avg_score_per_round) || 0;
+            const avgTricks = Number(season.avg_tricks_per_round) || 0;
+            const endDate = new Date(season.ended_at).toLocaleDateString('ru-RU');
+            message += `🏆 **${season.season_name}** (завершен ${endDate})\n`;
+            message += `   🎖 Финальный ELO: ${season.final_elo_rating}\n`;
+            message += `   🎮 Игр: ${season.games_played} (${winRate.toFixed(1)}% побед)\n`;
+            message += `   📊 Ср. за раунд: ${avgScore.toFixed(1)} очков, ${avgTricks.toFixed(1)} взяток\n`;
+            if (season.eggs_count > 0) {
+                message += `   🥚 Яиц: ${season.eggs_count}\n`;
+            }
+            if (season.golaya_count > 0) {
+                message += `   💎 Голых: ${season.golaya_count}\n`;
+            }
+            message += '\n';
+        });
+        const currentSeason = await statsService.getCurrentSeason();
+        message += `🎮 *Текущий сезон:* ${currentSeason.season_name}\n`;
+        message += `💪 Продолжайте играть для улучшения результатов!`;
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+    }
+    catch (error) {
+        console.error('Error getting player season history:', error);
+        await ctx.reply('❌ Ошибка при получении истории сезонов');
+    }
+});
 // Функция для форматирования карт игрока
 function formatPlayerCards(player, state) {
-    var _a;
     // Группировка и сортировка карт по масти
     const cardsBySuit = player.cards.reduce((acc, card) => {
         if (!acc[card.suit]) {
@@ -1425,7 +1515,7 @@ function formatPlayerCards(player, state) {
     }, {});
     // Сортировка карт в каждой масти по значению
     Object.values(cardsBySuit).forEach(cards => {
-        cards === null || cards === void 0 ? void 0 : cards.sort((a, b) => a.value - b.value);
+        cards?.sort((a, b) => a.value - b.value);
     });
     // Формируем сообщение с картами
     let message = `Карты игрока ${player.username} (всего ${player.cards.length}):\n`;
@@ -1449,7 +1539,7 @@ function formatPlayerCards(player, state) {
     if (state.currentRound > 1 && state.playerSuitMap && state.playerSuitMap.has(player.id)) {
         message += ` (${state.playerSuitMap.get(player.id)})`;
     }
-    const isCurrentPlayer = ((_a = state.players[state.currentPlayerIndex]) === null || _a === void 0 ? void 0 : _a.id) === player.id;
+    const isCurrentPlayer = state.players[state.currentPlayerIndex]?.id === player.id;
     if (isCurrentPlayer) {
         message += '\n\n🎯 Сейчас ваш ход!';
         if (state.tableCards.length > 0) {
@@ -1559,7 +1649,6 @@ function getPublicGameState(state) {
 }
 // Модифицируем функцию отправки карт игрока в виде стикеров
 async function sendPlayerCardsAsStickers(ctx, player, gameState) {
-    var _a;
     try {
         // Группировка карт по масти для сортировки
         const cardsBySuit = player.cards.reduce((acc, card) => {
@@ -1571,7 +1660,7 @@ async function sendPlayerCardsAsStickers(ctx, player, gameState) {
         }, {});
         // Сортировка карт в каждой масти по значению
         Object.values(cardsBySuit).forEach(cards => {
-            cards === null || cards === void 0 ? void 0 : cards.sort((a, b) => a.value - b.value);
+            cards?.sort((a, b) => a.value - b.value);
         });
         // Объединяем все карты в отсортированном порядке
         const sortedCards = [];
@@ -1587,7 +1676,7 @@ async function sendPlayerCardsAsStickers(ctx, player, gameState) {
             // Обновляем информацию о картах игрока в хранилище
             playerCardsInPrivateChat.set(player.id, {
                 cards: [...sortedCards],
-                gameId: (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id // Используем chatId из контекста вместо gameState.chatId
+                gameId: ctx.chat?.id // Используем chatId из контекста вместо gameState.chatId
             });
             // Добавляем информацию об inline режиме
             await ctx.reply('Ваши карты (используйте стикеры для хода):\n\nЧтобы быстро выбрать карту, начните писать @ваш_бот в чате и выберите карту из появившейся панели.');
@@ -1618,10 +1707,9 @@ async function sendPlayerCardsAsStickers(ctx, player, gameState) {
 }
 // Обработчик стикеров и текста для ходов в игре
 bot.on(['sticker', 'text'], async (ctx) => {
-    var _a, _b, _c;
     try {
-        const chatId = (_a = ctx.chat) === null || _a === void 0 ? void 0 : _a.id;
-        const userId = (_b = ctx.from) === null || _b === void 0 ? void 0 : _b.id;
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
         if (!chatId || !userId)
             return;
         // Используем ChatManager для получения актуального ID чата
@@ -1687,9 +1775,9 @@ bot.on(['sticker', 'text'], async (ctx) => {
             return; // Игра не активна, пропускаем
         }
         // Получаем текущего игрока
-        const currentPlayerId = (_c = gameState.players[gameState.currentPlayerIndex]) === null || _c === void 0 ? void 0 : _c.id;
+        const currentPlayerId = gameState.players[gameState.currentPlayerIndex]?.id;
         const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-        console.log(`[LOG] Текущий ход игрока: ${currentPlayer === null || currentPlayer === void 0 ? void 0 : currentPlayer.username} (ID: ${currentPlayerId})`);
+        console.log(`[LOG] Текущий ход игрока: ${currentPlayer?.username} (ID: ${currentPlayerId})`);
         if (!currentPlayer) {
             console.log(`[LOG] Текущий игрок не найден`);
             return;
@@ -1872,7 +1960,7 @@ bot.command('inline_setup', async (ctx) => {
         await ctx.reply('Произошла ошибка при получении информации о боте');
     }
 });
-
 // Обработка остановки бота
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+//# sourceMappingURL=index.js.map
