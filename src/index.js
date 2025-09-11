@@ -292,6 +292,8 @@ bot.telegram.setMyCommands([
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
     //{ command: 'time', description: 'Включить автоматические ходы (30 сек)' },
+    { command: 'swap', description: 'Обмен местами: первый пишет /swap, второй тоже /swap — меняются' },
+    { command: 'swapcancel', description: 'Отменить ожидание обмена (может только инициатор)' },
     { command: 'ratingall', description: 'Глобальный рейтинг игроков' },
     { command: 'ratingchat', description: 'Рейтинг игроков (этот чат)' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
@@ -1384,7 +1386,114 @@ bot.command('myrank', async (ctx) => {
     message += '💪 Продолжайте играть в этом чате для повышения рейтинга!';
     await ctx.reply(message, { parse_mode: 'Markdown' });
 });
-
+// Ожидание пары для обмена местами: chatId -> playerId (инициатор ожидания)
+const pendingSwap = new Map();
+// Обработчик команды /swap
+// Поведение: первый игрок пишет /swap — встаёт "в очередь" на обмен.
+// Следующий игрок, который напишет /swap, меняется с ним местами.
+// Обмен разрешён только между взятками (когда стол пуст).
+// Обработчик команды /swap (обмен местами игроков)
+bot.command('swap', async (ctx) => {
+    try {
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+        const username = ctx.from?.username || `Player${userId}`;
+        if (!chatId || !userId)
+            return;
+        const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
+        // Проверяем, есть ли уже игра с актуальным ID чата
+        let game = games.get(actualChatId);
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
+        if (!game) {
+            await safeSendMessage(ctx, 'Нет активной игры для обмена.');
+            return;
+        }
+        const state = game.getGameState();
+        // Разрешаем обмен только если раунд еще не начался
+        if (state.teams.team1.tricks !== 0 && state.teams.team2.tricks !== 0) {
+            await safeSendMessage(ctx, 'Обмен местами разрешён только до начала раунда.');
+            return;
+        }
+        const currentPlayer = state.players.find(p => p.id === userId);
+        if (!currentPlayer) {
+            await safeSendMessage(ctx, 'Вы не являетесь участником игры.');
+            return;
+        }
+        // Разрешаем обмен только между взятками (когда стол пуст)
+        if (state.tableCards.length > 0) {
+            await safeSendMessage(ctx, 'Обмен местами разрешён только между взятками (когда стол пуст).');
+            return;
+        }
+        // Если уже кто-то ожидает обмена
+        const pending = pendingSwap.get(actualChatId);
+        if (!pending) {
+            // Если нет ожидания, ставим пользователя в очередь
+            pendingSwap.set(actualChatId, { id: userId, username });
+            await safeSendMessage(ctx, 'Ожидание обмена: следующий игрок, который напишет /swap, поменяется с вами местами. Для отмены используйте /swapcancel');
+            return;
+        }
+        // Если пользователь сам себя вызывает
+        if (pending.id === userId) {
+            await safeSendMessage(ctx, 'Вы уже ожидаете обмена. Для отмены используйте /swapcancel');
+            return;
+        }
+        // Выполняем обмен
+        const firstPlayer = pending;
+        const secondPlayer = { id: userId, username };
+        const result = game.swapPlayers(firstPlayer, secondPlayer, actualChatId);
+        // Очищаем ожидание обмена
+        pendingSwap.delete(actualChatId);
+        if (result.success) {
+            await safeSendMessage(ctx, `Обмен местами выполнен между @${firstPlayer.username} и @${secondPlayer.username}.`);
+        }
+        else {
+            await safeSendMessage(ctx, result.message || 'Не удалось выполнить обмен.');
+        }
+        // Получаем и отправляем информацию о текущем состоянии игры
+        const gameSummary = game.getGameSummary();
+        await safeSendMessage(ctx, gameSummary, {
+            reply_markup: {
+                inline_keyboard: [[
+                        { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                    ]]
+            }
+        });
+    }
+    catch (error) {
+        console.error('Ошибка в команде /swap:', error);
+        await safeSendMessage(ctx, 'Произошла ошибка при обмене местами');
+    }
+});
+// Команда /swapcancel для отмены ожидания обмена
+bot.command('swapcancel', async (ctx) => {
+    try {
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+        if (!chatId || !userId)
+            return;
+        const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
+        const waiterId = pendingSwap.get(actualChatId);
+        if (!waiterId) {
+            await safeSendMessage(ctx, 'Сейчас никто не ожидает обмена.');
+            return;
+        }
+        pendingSwap.delete(actualChatId);
+        await safeSendMessage(ctx, 'Ожидание обмена отменено.');
+    }
+    catch (error) {
+        console.error('Ошибка в команде /swapcancel:', error);
+        await safeSendMessage(ctx, 'Произошла ошибка при отмене ожидания обмена');
+    }
+});
 // Функция для форматирования карт игрока
 function formatPlayerCards(player, state) {
     // Группировка и сортировка карт по масти

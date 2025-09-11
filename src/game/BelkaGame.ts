@@ -1353,4 +1353,151 @@ export class BelkaGame {
         this.state.gameMode = mode;
         console.log(`[LOG] Установлен режим игры: ${mode}`);
     }
+
+    /**
+     * Заменяет игрока за столом (playerIdOut) на НОВОГО пользователя, который не сидит за столом.
+     * Условия:
+     *  - Игра активна
+     *  - На столе нет карт (между взятками)
+     *  - Новый пользователь не участвует уже в игре
+     * Поведение:
+     *  - Новый игрок занимает то же сиденье и наследует карты/счёт/взятки
+     *  - Команды пересобираются по сиденьям (0,2 → team1; 1,3 → team2)
+     *  - Переносятся привязки: playerSuitMap, clubJackHolder/initialClubJackHolder
+     */
+    public swapPlayers(
+        firstPlayerData: { id: number; username: string;},
+        secondPlayerData: { id: number; username: string;},
+        chatId: number,
+    ): { success: boolean; message: string } {
+        if (!this.state.isActive) {
+            return { success: false, message: 'Игра неактивна' };
+        }
+        if (this.state.tableCards.length > 0) {
+            return { success: false, message: 'Замену можно делать только между взятками (когда стол пуст)' };
+        }
+        const { id: id1, username: username1 } = firstPlayerData;
+        const { id: id2, username: username2 } = secondPlayerData;
+
+        // Найти индексы игроков
+        const idx1 = this.state.players.findIndex(p => p.id === id1);
+        const idx2 = this.state.players.findIndex(p => p.id === id2);
+
+        // Проверка: оба игрока за столом
+        const is1Player = idx1 !== -1;
+        const is2Player = idx2 !== -1;
+
+        // Если оба игрока за столом — просто меняем местами
+        if (is1Player && is2Player) {
+            // Меняем местами объекты игроков
+            [this.state.players[idx1], this.state.players[idx2]] = [this.state.players[idx2], this.state.players[idx1]];
+
+            // Пересобираем команды по сиденьям (0,2 team1; 1,3 team2)
+            this.state.teams.team1.players = [this.state.players[0], this.state.players[2]];
+            this.state.teams.team2.players = [this.state.players[1], this.state.players[3]];
+
+            // Пересобираем playerSuitMap по новой логике:
+            // Найти индекс initialClubJackHolder в новом порядке игроков
+            if (this.state.initialClubJackHolder) {
+                const initialIdx = this.state.players.findIndex(p => p.id === this.state.initialClubJackHolder!.id);
+                if (initialIdx !== -1) {
+                    // Слева (по часовой стрелке): ♥, напротив: ♠, справа: ♦, сам: ♣
+                    const seats = [
+                        { offset: 0, suit: '♣' as CardSuit },
+                        { offset: 1, suit: '♥' as CardSuit },
+                        { offset: 2, suit: '♠' as CardSuit },
+                        { offset: 3, suit: '♦' as CardSuit },
+                    ];
+                    this.state.playerSuitMap.clear();
+                    for (const { offset, suit } of seats) {
+                        const idx = (initialIdx + offset) % 4;
+                        const player = this.state.players[idx];
+                        if (player) {
+                            this.state.playerSuitMap.set(player.id, suit);
+                        }
+                    }
+                }
+            }
+
+            // Обновляем clubJackHolder и initialClubJackHolder если нужно
+            if (this.state.clubJackHolder) {
+                if (this.state.clubJackHolder.id === id1) {
+                    this.state.clubJackHolder = this.state.players[idx1];
+                } else if (this.state.clubJackHolder.id === id2) {
+                    this.state.clubJackHolder = this.state.players[idx2];
+                }
+            }
+            if (this.state.initialClubJackHolder) {
+                if (this.state.initialClubJackHolder.id === id1) {
+                    this.state.initialClubJackHolder = this.state.players[idx1];
+                } else if (this.state.initialClubJackHolder.id === id2) {
+                    this.state.initialClubJackHolder = this.state.players[idx2];
+                }
+            }
+
+            return { success: true, message: `Игроки @${username1} и @${username2} поменялись местами.` };
+        }
+
+        // Если только первый игрок за столом — заменяем его на второго (нового)
+        if (is1Player && !is2Player) {
+            const oldPlayer = this.state.players[idx1];
+            const newPlayer = {
+                ...oldPlayer,
+                id: id2,
+                username: username2,
+                chatId,
+            };
+            this.state.players[idx1] = newPlayer;
+
+            // Пересобираем команды по сиденьям
+            this.state.teams.team1.players = [this.state.players[0], this.state.players[2]];
+            this.state.teams.team2.players = [this.state.players[1], this.state.players[3]];
+
+            // Пересобираем playerSuitMap
+            this.setupPlayerSuitMap();
+
+            // Обновляем clubJackHolder/initialClubJackHolder если нужно
+            if (this.state.clubJackHolder && this.state.clubJackHolder.id === id1) {
+                this.state.clubJackHolder = newPlayer;
+            }
+            if (this.state.initialClubJackHolder && this.state.initialClubJackHolder.id === id1) {
+                this.state.initialClubJackHolder = newPlayer;
+            }
+
+            return { success: true, message: `Игрок @${username1} заменён на @${username2}.` };
+        }
+
+        // Если только второй игрок за столом — заменяем его на первого (нового)
+        if (!is1Player && is2Player) {
+            const oldPlayer = this.state.players[idx2];
+            const newPlayer = {
+                ...oldPlayer,
+                id: id1,
+                username: username1,
+                chatId,
+            };
+            this.state.players[idx2] = newPlayer;
+
+            // Пересобираем команды по сиденьям
+            this.state.teams.team1.players = [this.state.players[0], this.state.players[2]];
+            this.state.teams.team2.players = [this.state.players[1], this.state.players[3]];
+
+            // Пересобираем playerSuitMap
+            this.setupPlayerSuitMap();
+
+            // Обновляем clubJackHolder/initialClubJackHolder если нужно
+            if (this.state.clubJackHolder && this.state.clubJackHolder.id === id2) {
+                this.state.clubJackHolder = newPlayer;
+            }
+            if (this.state.initialClubJackHolder && this.state.initialClubJackHolder.id === id2) {
+                this.state.initialClubJackHolder = newPlayer;
+            }
+
+            return { success: true, message: `Игрок @${username2} заменён на @${username1}.` };
+        }
+
+        // Если ни один не за столом — ничего не делаем
+        return { success: false, message: 'Оба игрока не участвуют в игре' };
+        return { success: false, message: 'Функция временно недоступна' };
+    }
 } 
