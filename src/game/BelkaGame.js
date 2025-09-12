@@ -1228,7 +1228,6 @@ class BelkaGame {
         }
         // Если ни один не за столом — ничего не делаем
         return { success: false, message: 'Оба игрока не участвуют в игре' };
-        return { success: false, message: 'Функция временно недоступна' };
     }
 }
 exports.BelkaGame = BelkaGame;

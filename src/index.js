@@ -1423,11 +1423,6 @@ bot.command('swap', async (ctx) => {
             await safeSendMessage(ctx, 'Обмен местами разрешён только до начала раунда.');
             return;
         }
-        const currentPlayer = state.players.find(p => p.id === userId);
-        if (!currentPlayer) {
-            await safeSendMessage(ctx, 'Вы не являетесь участником игры.');
-            return;
-        }
         // Разрешаем обмен только между взятками (когда стол пуст)
         if (state.tableCards.length > 0) {
             await safeSendMessage(ctx, 'Обмен местами разрешён только между взятками (когда стол пуст).');
