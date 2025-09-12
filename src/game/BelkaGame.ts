@@ -309,7 +309,7 @@ export class BelkaGame {
                 return this.getCardValue(b) - this.getCardValue(a);
             }
 
-            return 0;
+            return 1;
         });
     }
 

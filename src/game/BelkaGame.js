@@ -235,7 +235,7 @@ class BelkaGame {
                 // Если обе карты обычные козыри - по силе (от старших к младшим)
                 return this.getCardValue(b) - this.getCardValue(a);
             }
-            return 0;
+            return 1;
         });
     }
     async makeMove(playerId, cardIndex) {
