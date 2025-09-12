@@ -188,6 +188,10 @@ class BelkaGame {
         // Определяем козырь для первого раунда (всегда крести)
         this.state.trump = '♣';
         console.log(`[LOG] Инициализация игры завершена. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
+        // Пересортировываем карты всех игроков после определения козыря
+        for (const player of this.state.players) {
+            this.sortPlayerHand(player.cards);
+        }
         // Возвращаем информацию о начальном состоянии игры
         return this.getGameSummary();
     }
