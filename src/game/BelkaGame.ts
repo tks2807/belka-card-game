@@ -1408,22 +1408,22 @@ export class BelkaGame {
             // Пересобираем playerSuitMap по новой логике:
             // Найти индекс initialClubJackHolder в новом порядке игроков
             if (this.state.initialClubJackHolder) {
-                const initialIdx = this.state.players.findIndex(p => p.id === this.state.initialClubJackHolder!.id);
-                if (initialIdx !== -1) {
-                    // Слева (по часовой стрелке): ♥, напротив: ♠, справа: ♦, сам: ♣
-                    const seats = [
-                        { offset: 0, suit: '♣' as CardSuit },
-                        { offset: 1, suit: '♥' as CardSuit },
-                        { offset: 2, suit: '♠' as CardSuit },
-                        { offset: 3, suit: '♦' as CardSuit },
-                    ];
+                const initialHolderIndex = this.state.players.findIndex(p => p.id === this.state.initialClubJackHolder!.id);
+                if (initialHolderIndex !== -1) {
+                    // Устанавливаем масти для каждого игрока
+                    // Порядок мастей: ♣ (крести), ♥ (черви), ♠ (пики), ♦ (буби)
+                    const suits: CardSuit[] = ['♣', '♥', '♠', '♦'];
+                    
+                    // Очищаем предыдущую карту мастей
                     this.state.playerSuitMap.clear();
-                    for (const { offset, suit } of seats) {
-                        const idx = (initialIdx + offset) % 4;
-                        const player = this.state.players[idx];
-                        if (player) {
-                            this.state.playerSuitMap.set(player.id, suit);
-                        }
+                    
+                    // Игрок с валетом крести всегда отвечает за крести
+                    for (let i = 0; i < this.state.players.length; i++) {
+                        const player = this.state.players[i];
+                        // Вычисляем смещение от игрока с валетом крести
+                        const suitIndex = (i - initialHolderIndex + 4) % 4;
+                        // Присваиваем масть каждому игроку
+                        this.state.playerSuitMap.set(player.id, suits[suitIndex]);
                     }
                 }
             }
