@@ -273,6 +273,84 @@ const games = new Map<number, BelkaGame>();
 // Хранилище информации о картах игроков в личных чатах
 const playerCardsInPrivateChat = new Map<number, { cards: Card[], gameId: number }>();
 
+// ================= Emoji token mapping per deal =================
+// Ровно 36 эмодзи — по одной на карту. Мы будем их перетасовывать на каждую раздачу.
+const EMOJI_TOKENS: string[] = [
+  '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗','😙','😚',
+  '🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😴','🤤','🤠','😺','😸','😹','😻','😼'
+];
+
+// --- Ключ карты и хранилище эмодзи ---
+type CardKey = string; // например "♠7", "♥K"
+const cardKey = (c: Card): CardKey => `${c.suit}${c.rank}`;
+
+type EmojiStore = {
+  e2c: Map<string, Card>;     // emoji -> Card
+  c2e: Map<CardKey, string>;  // "♠7" -> emoji
+};
+
+// На каждую игру (чат) — свой стор
+const emojiStores = new Map<number, EmojiStore>(); // chatId -> store
+
+function getCardByEmoji(chatId: number, emoji: string): Card | null {
+  const store = emojiStores.get(chatId);
+  if (!store) return null;
+  return store.e2c.get(emoji) || null;
+}
+
+function getEmojiByCard(chatId: number, card: Card): string | null {
+  const store = emojiStores.get(chatId);
+  if (!store) return null;
+  return store.c2e.get(cardKey(card)) || null;
+}
+
+function removeByEmoji(chatId: number, emoji: string) {
+  const store = emojiStores.get(chatId);
+  if (!store) return;
+  const card = store.e2c.get(emoji);
+  if (!card) return;
+  store.e2c.delete(emoji);
+  store.c2e.delete(cardKey(card));
+}
+
+function clearEmojiStore(chatId: number) {
+  emojiStores.delete(chatId);
+}
+
+function initEmojiMapForDeal(chatId: number) {
+  const shuffled = shuffleArray(EMOJI_TOKENS);
+  const store: EmojiStore = { e2c: new Map(), c2e: new Map() };
+
+  const allCardKeys = Object.keys(cardStickers); // ["♠7", "♠8", ..., "♦A"]
+  const keysShuffled = shuffleArray(allCardKeys); // доп. случайность
+
+  const len = Math.min(shuffled.length, keysShuffled.length);
+  for (let i = 0; i < len; i++) {
+    const key = keysShuffled[i];
+    const suit = key[0] as CardSuit;
+    const rank = key.substring(1) as CardRank;
+    const card = { suit, rank, value: 0 } as Card; // value не используется для маппинга
+
+    const emoji = shuffled[i];
+    store.e2c.set(emoji, card);
+    store.c2e.set(key, emoji);
+  }
+
+  emojiStores.set(chatId, store);
+}
+
+function shuffleArray<T>(array: T[]): T[] {
+  const result = [...array]; // копируем, чтобы не мутировать оригинал
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Префикс, чтобы уверенно отличать токен-сообщение от обычного текста
+const EMOJI_PREFIX = '§:';
+
 // Интерфейс для группировки карт по масти
 interface CardsBySuit {
     [suit: string]: Card[] | undefined;
@@ -448,7 +526,7 @@ bot.on('inline_query', async (ctx) => {
                 id: `card_${index}`,
                 sticker_file_id: stickerId,
                 input_message_content: {
-                    message_text: `${card.suit}${card.rank}`
+                    message_text: `${EMOJI_PREFIX}${getEmojiByCard(playerInfo.gameId, card)}`
                 }
             };
         }).filter(item => item !== null);
@@ -751,6 +829,9 @@ bot.command('startbelka', async (ctx) => {
         
         // Получаем обновленное состояние игры
         const updatedState = game.getGameState();
+
+        // Инициализируем эмодзи-отображение для этой раздачи
+        initEmojiMapForDeal(actualChatId);
         
         // Помещаем карты всех игроков в хранилище для инлайн-режима
         updatedState.players.forEach(player => {
@@ -820,6 +901,9 @@ bot.command('startwalka', async (ctx) => {
         
         // Получаем обновленное состояние игры
         const updatedState = game.getGameState();
+
+        // Инициализируем эмодзи-отображение для этой раздачи
+        initEmojiMapForDeal(actualChatId);
         
         // Помещаем карты всех игроков в хранилище для инлайн-режима
         updatedState.players.forEach(player => {
@@ -1933,7 +2017,19 @@ bot.on(['sticker', 'text'], async (ctx) => {
         } else if ('text' in ctx.message) {
             // Если это текстовое сообщение, проверяем, содержит ли оно информацию о карте
             const cardMatch = ctx.message.text.match(/[♠♣♦♥][7-9JQKA]|[♠♣♦♥]10/);
-            if (cardMatch) {
+            
+            if (ctx.message.text.startsWith(EMOJI_PREFIX)) {
+                const emoji = ctx.message.text.slice(EMOJI_PREFIX.length);
+                const resolved = getCardByEmoji(actualChatId, emoji);
+                if (resolved) {
+                  console.log(`[LOG] Эмодзи-токен распознан: ${emoji} -> ${resolved.suit}${resolved.rank}`);
+                  cardInfo = { suit: resolved.suit, rank: resolved.rank } as { suit: CardSuit, rank: CardRank };
+                } else {
+                  console.log(`[LOG] Эмодзи-токен ${emoji} не найден в текущем сторе`);
+                  await ctx.reply('Этот выбор недействителен для текущей раздачи.');
+                  return;
+                }
+            } else if (cardMatch) {
                 const card = cardMatch[0];
                 const suit = card[0] as CardSuit;
                 const rank = card.substring(1) as CardRank;
