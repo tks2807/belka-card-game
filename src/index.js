@@ -239,8 +239,10 @@ const playerCardsInPrivateChat = new Map();
 // ================= Emoji token mapping per deal =================
 // Ровно 36 эмодзи — по одной на карту. Мы будем их перетасовывать на каждую раздачу.
 const EMOJI_TOKENS = [
-    '😀', '😁', '😂', '🤣', '😃', '😄', '😅', '😆', '😉', '😊', '😋', '😎', '😍', '😘', '🥰', '😗', '😙', '😚',
-    '🙂', '🤗', '🤩', '🤔', '🤨', '😐', '😑', '😶', '🙄', '😏', '😴', '🤤', '🤠', '😺', '😸', '😹', '😻', '😼'
+    '🐝', '🪱', '🐛', '🦋', '🐌', '🐞', '🐜', '🪰', '🪲', '🪳',
+    '🦟', '🦗', '🕷', '🦂', '🐢', '🐍', '🦎', '🦖', '🦕', '🐙',
+    '🦑', '🦐', '🦞', '🦀', '🪼', '🪸', '🐡', '🦧', '🦍', '🦬',
+    '🐖', '🫎', '🐀', '🐁', '🦉', '🦅', '🦆', '🦇'
 ];
 const cardKey = (c) => `${c.suit}${c.rank}`;
 // На каждую игру (чат) — свой стор
@@ -340,6 +342,38 @@ const cardStickers = {
 const stickerToCard = new Map();
 // Дополнительная Map для поиска по file_unique_id (будет заполнена при логировании стикеров)
 const uniqueIdToCard = new Map();
+// === Move message tracking (per chat) ===
+const moveMessageIds = new Map(); // chatId -> list of message_ids
+function trackMoveMessage(chatId, messageId) {
+    if (!moveMessageIds.has(chatId))
+        moveMessageIds.set(chatId, []);
+    moveMessageIds.get(chatId).push(messageId);
+}
+// Удаление только snapshot id сообщений о ходе после задержки (чтобы не удалить новые)
+function scheduleClearTrackedMoveMessages(chatId, delayMs = 1500) {
+    const idsSnapshot = moveMessageIds.get(chatId) ? [...moveMessageIds.get(chatId)] : [];
+    if (idsSnapshot.length === 0)
+        return;
+    setTimeout(async () => {
+        for (const id of idsSnapshot) {
+            try {
+                await bot.telegram.deleteMessage(chatId, id);
+            }
+            catch (e) {
+                console.log(`[LOG] Не удалось удалить сообщение ${id} в чате ${chatId}:`, e?.message || e);
+            }
+        }
+        // Удаляем только те id, которые были в снимке
+        const current = moveMessageIds.get(chatId);
+        if (current) {
+            const remaining = current.filter(mid => !idsSnapshot.includes(mid));
+            if (remaining.length > 0)
+                moveMessageIds.set(chatId, remaining);
+            else
+                moveMessageIds.delete(chatId);
+        }
+    }, delayMs);
+}
 // Заполнение соответствия стикеров картам
 for (const key in cardStickers) {
     const [suit, rank] = [key[0], key.substring(1)];
@@ -1022,7 +1056,9 @@ async function makeAutoMove(chatId, playerId) {
             await bot.telegram.sendMessage(chatId, message);
             // Обрабатываем результат как обычно
             if (result.isRoundComplete && result.roundSummary) {
-                await bot.telegram.sendMessage(chatId, result.roundSummary, {
+                // Чуть подождём и удалим предыдущие сообщения о ходе
+                scheduleClearTrackedMoveMessages(chatId, 1500);
+                const sent = await bot.telegram.sendMessage(chatId, result.roundSummary, {
                     parse_mode: 'HTML',
                     reply_markup: {
                         inline_keyboard: [[
@@ -1030,6 +1066,10 @@ async function makeAutoMove(chatId, playerId) {
                             ]]
                     }
                 });
+                // Тречим сводку раунда, если это ещё не финальные результаты всего раунда
+                if (!result.isGameRoundComplete) {
+                    trackMoveMessage(chatId, sent.message_id);
+                }
                 if (result.isGameRoundComplete && result.roundResults) {
                     await bot.telegram.sendMessage(chatId, result.roundResults, {
                         parse_mode: 'HTML',
@@ -1898,14 +1938,20 @@ bot.on(['sticker', 'text'], async (ctx) => {
             console.log(`[LOG] roundResults exists: ${!!result.roundResults}`);
             // Если раунд завершен, отправляем сводку
             if (result.isRoundComplete && result.roundSummary) {
+                // Перед отправкой новой сводки удалим прошлые сообщения о ходе с небольшой задержкой
+                scheduleClearTrackedMoveMessages(actualChatId, 1500);
                 console.log(`[LOG] Отправка сводки раунда: ${result.roundSummary.substring(0, 50)}...`);
-                await ctx.reply(result.roundSummary, {
+                const sent = await ctx.reply(result.roundSummary, {
                     reply_markup: {
                         inline_keyboard: [[
                                 { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
                             ]]
                     }
                 });
+                // Тречим сводку раунда, если это ещё не финальные результаты всего раунда
+                if (!result.isGameRoundComplete) {
+                    trackMoveMessage(actualChatId, sent.message_id);
+                }
                 // Если раунд игры завершен (все карты сыграны), отправляем результаты раунда
                 if (result.isGameRoundComplete && result.roundResults) {
                     console.log(`[LOG] Отправка результатов раунда: ${result.roundResults.substring(0, 50)}...`);
@@ -1932,6 +1978,8 @@ bot.on(['sticker', 'text'], async (ctx) => {
             const newCurrentPlayer = updatedState.players[updatedState.currentPlayerIndex];
             // Отправляем сообщение о ходе только если раунд не завершен
             if (!result.isRoundComplete) {
+                // Снимок и удаление предыдущих сообщений о ходе (не финальные итоги)
+                scheduleClearTrackedMoveMessages(actualChatId, 1500);
                 // Формируем сообщение о ходе в новом формате
                 let moveMessage = '🎮 На столе:\n';
                 updatedState.tableCards.forEach(tableCard => {
@@ -1956,13 +2004,14 @@ bot.on(['sticker', 'text'], async (ctx) => {
                         moveMessage += `\n⏰ У игрока есть 30 секунд на ход`;
                     }
                 }
-                await ctx.reply(moveMessage, {
+                const sent = await ctx.reply(moveMessage, {
                     reply_markup: {
                         inline_keyboard: [[
                                 { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
                             ]]
                     }
                 });
+                trackMoveMessage(actualChatId, sent.message_id);
             }
             // Обновляем карты в хранилище для всех игроков
             updatedState.players.forEach(player => {

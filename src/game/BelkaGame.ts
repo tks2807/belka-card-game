@@ -1389,8 +1389,8 @@ export class BelkaGame {
         const { id: id2, username: username2 } = secondPlayerData;
 
         // Найти индексы игроков
-        const idx1 = this.state.players.findIndex(p => p.id === id1);
-        const idx2 = this.state.players.findIndex(p => p.id === id2);
+        let idx1 = this.state.players.findIndex(p => p.id === id1);
+        let idx2 = this.state.players.findIndex(p => p.id === id2);
 
         // Проверка: оба игрока за столом
         const is1Player = idx1 !== -1;
@@ -1401,47 +1401,35 @@ export class BelkaGame {
             // Меняем местами объекты игроков
             [this.state.players[idx1], this.state.players[idx2]] = [this.state.players[idx2], this.state.players[idx1]];
 
+            // Обновляем индексы после обмена
+            const tmp = idx1;
+            idx1 = idx2;
+            idx2 = tmp; 
+
             // Пересобираем команды по сиденьям (0,2 team1; 1,3 team2)
             this.state.teams.team1.players = [this.state.players[0], this.state.players[2]];
             this.state.teams.team2.players = [this.state.players[1], this.state.players[3]];
 
-            // Пересобираем playerSuitMap по новой логике:
-            // Найти индекс initialClubJackHolder в новом порядке игроков
-            if (this.state.initialClubJackHolder) {
-                const initialHolderIndex = this.state.players.findIndex(p => p.id === this.state.initialClubJackHolder!.id);
-                if (initialHolderIndex !== -1) {
-                    // Устанавливаем масти для каждого игрока
-                    // Порядок мастей: ♣ (крести), ♥ (черви), ♠ (пики), ♦ (буби)
-                    const suits: CardSuit[] = ['♣', '♥', '♠', '♦'];
-                    
-                    // Очищаем предыдущую карту мастей
-                    this.state.playerSuitMap.clear();
-                    
-                    // Игрок с валетом крести всегда отвечает за крести
-                    for (let i = 0; i < this.state.players.length; i++) {
-                        const player = this.state.players[i];
-                        // Вычисляем смещение от игрока с валетом крести
-                        const suitIndex = (i - initialHolderIndex + 4) % 4;
-                        // Присваиваем масть каждому игроку
-                        this.state.playerSuitMap.set(player.id, suits[suitIndex]);
-                    }
-                }
+             // Обновляем clubJackHolder и initialClubJackHolder если нужно
+            if (this.state.clubJackHolder && this.state.clubJackHolder.id === id1) {
+                this.state.clubJackHolder = this.state.players[idx1];
+            } else if (this.state.clubJackHolder && this.state.clubJackHolder.id === id2) {
+                this.state.clubJackHolder = this.state.players[idx2];
+            }
+            if (this.state.initialClubJackHolder && this.state.initialClubJackHolder.id === id1) {
+                this.state.initialClubJackHolder = this.state.players[idx1];
+            } else if (this.state.initialClubJackHolder && this.state.initialClubJackHolder.id === id2) {
+                this.state.initialClubJackHolder = this.state.players[idx2];
             }
 
-            // Обновляем clubJackHolder и initialClubJackHolder если нужно
-            if (this.state.clubJackHolder) {
-                if (this.state.clubJackHolder.id === id1) {
-                    this.state.clubJackHolder = this.state.players[idx1];
-                } else if (this.state.clubJackHolder.id === id2) {
-                    this.state.clubJackHolder = this.state.players[idx2];
-                }
-            }
-            if (this.state.initialClubJackHolder) {
-                if (this.state.initialClubJackHolder.id === id1) {
-                    this.state.initialClubJackHolder = this.state.players[idx1];
-                } else if (this.state.initialClubJackHolder.id === id2) {
-                    this.state.initialClubJackHolder = this.state.players[idx2];
-                }
+            // Пересобираем playerSuitMap
+            this.setupPlayerSuitMap();
+
+            this.determineNewTrump(); // Определяем козырь заново
+            
+            // Пересортировываем карты всех игроков после определения козыря
+            for (const player of this.state.players) {
+                this.sortPlayerHand(player.cards);
             }
 
             return { success: true, message: `Игроки @${username1} и @${username2} поменялись местами.` };
@@ -1462,9 +1450,6 @@ export class BelkaGame {
             this.state.teams.team1.players = [this.state.players[0], this.state.players[2]];
             this.state.teams.team2.players = [this.state.players[1], this.state.players[3]];
 
-            // Пересобираем playerSuitMap
-            this.setupPlayerSuitMap();
-
             // Обновляем clubJackHolder/initialClubJackHolder если нужно
             if (this.state.clubJackHolder && this.state.clubJackHolder.id === id1) {
                 this.state.clubJackHolder = newPlayer;
@@ -1472,6 +1457,11 @@ export class BelkaGame {
             if (this.state.initialClubJackHolder && this.state.initialClubJackHolder.id === id1) {
                 this.state.initialClubJackHolder = newPlayer;
             }
+
+            // Пересобираем playerSuitMap
+            this.setupPlayerSuitMap();
+            
+            this.determineNewTrump(); // Определяем козырь заново
 
             return { success: true, message: `Игрок @${username1} заменён на @${username2}.` };
         }
@@ -1491,9 +1481,6 @@ export class BelkaGame {
             this.state.teams.team1.players = [this.state.players[0], this.state.players[2]];
             this.state.teams.team2.players = [this.state.players[1], this.state.players[3]];
 
-            // Пересобираем playerSuitMap
-            this.setupPlayerSuitMap();
-
             // Обновляем clubJackHolder/initialClubJackHolder если нужно
             if (this.state.clubJackHolder && this.state.clubJackHolder.id === id2) {
                 this.state.clubJackHolder = newPlayer;
@@ -1501,6 +1488,11 @@ export class BelkaGame {
             if (this.state.initialClubJackHolder && this.state.initialClubJackHolder.id === id2) {
                 this.state.initialClubJackHolder = newPlayer;
             }
+
+            // Пересобираем playerSuitMap
+            this.setupPlayerSuitMap();
+
+            this.determineNewTrump(); // Определяем козырь заново
 
             return { success: true, message: `Игрок @${username2} заменён на @${username1}.` };
         }
