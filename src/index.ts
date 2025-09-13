@@ -1697,6 +1697,15 @@ bot.command('swap', async (ctx) => {
       await safeSendMessage(ctx, result.message || 'Не удалось выполнить обмен.');
     }
 
+    const updatedState = game.getGameState();
+    updatedState.players.forEach(player => {
+        console.log(`[LOG] Добавляем карты игрока ${player.username} в хранилище для инлайн-режима`);
+        playerCardsInPrivateChat.set(player.id, {
+            cards: [...player.cards],
+            gameId: actualChatId
+        });
+    });
+
     // Получаем и отправляем информацию о текущем состоянии игры
     const gameSummary = game.getGameSummary();
     await safeSendMessage(ctx, gameSummary, {
