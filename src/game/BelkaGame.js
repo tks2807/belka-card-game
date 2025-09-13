@@ -717,12 +717,16 @@ class BelkaGame {
                 if (player.cards.some(card => card.rank === 'J' && card.suit === '♣')) {
                     console.log(`[LOG] Валет крести у игрока ${player.username}`);
                     this.state.clubJackHolder = player;
+                    // Определяем масть козыря по карте игрока
+                    this.state.trump = this.state.playerSuitMap.get(player.id) || '♣';
                     break;
                 }
             }
             // Увеличиваем номер раунда ПОСЛЕ всех настроек
             this.state.currentRound++;
-            return "🥚 Яйца! Обе команды набрали по 60 очков. Раунд будет переигран, победившая команда получит 4 очка.";
+            // Добавляем сводку состояния игры после переигровки "яиц"
+            const summary = this.getGameSummary();
+            return "🥚 Яйца! Обе команды набрали по 60 очков. Раунд будет переигран, победившая команда получит 4 очка.\n\n" + summary;
         }
         // Проверка, является ли этот раунд переигровкой после "яиц"
         if (this.state.eggsTiebreaker) {
