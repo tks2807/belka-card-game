@@ -1253,25 +1253,9 @@ export class BelkaGame {
         };
     }
 
-    public checkForReshuffle(playerId: number): boolean {
-        const player = this.state.players.find(p => p.id === playerId);
-        if (!player) return false;
-
-        // Подсчет очков в руке
-        const pointsInHand = player.cards.reduce((sum, card) => {
-            return sum + this.getCardPoints(card);
-        }, 0);
-
-        // Подсчет карт одной масти (без учета валетов)
-        const suitCounts = player.cards.reduce((counts: { [key in CardSuit]: number }, card) => {
-            if (card.rank !== 'J') {
-                counts[card.suit] = (counts[card.suit] || 0) + 1;
-            }
-            return counts;
-        }, {} as { [key in CardSuit]: number });
-
-        // Проверка условий пересдачи
-        return pointsInHand <= 13 || Object.values(suitCounts).some(count => count >= 5);
+    public checkForReshuffle(_playerId: number): boolean {
+        // Пересдача отключена: играем полностью рандомными раздачами без фильтрации по руке.
+        return false;
     }
 
     private getCardPoints(card: Card): number {
