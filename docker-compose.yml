@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: belka-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./src/db/add_elo_rating.sql:/docker-entrypoint-initdb.d/02-add_elo_rating.sql:ro
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/03-init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  belka-game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: belka-game
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Bot API port
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data  # For persistent bot data
+      - ./logs:/app/logs  # For logs
+
+volumes:
+  db_data:
