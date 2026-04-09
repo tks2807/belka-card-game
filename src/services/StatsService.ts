@@ -275,10 +275,12 @@ export class StatsService {
 
             await client.query('COMMIT');
 
-            const finalDelta = Math.round(globalDelta);
-            console.log(`ELO обновлён для ${username}: ${playerELO} -> ${newGlobalELO} (delta: ${finalDelta > 0 ? '+' : ''}${finalDelta}, K=${K})`);
+            const finalGlobalDelta = Math.round(globalDelta);
+            const finalChatDelta = Math.round(chatDelta);
+            console.log(`ELO обновлён для ${username}: global ${playerELO} -> ${newGlobalELO} (delta: ${finalGlobalDelta > 0 ? '+' : ''}${finalGlobalDelta}, K=${K}); chat ${playerChatELO} -> ${newChatELO} (delta: ${finalChatDelta > 0 ? '+' : ''}${finalChatDelta})`);
 
-            return { oldElo: playerELO, newElo: newGlobalELO, delta: finalDelta, gamesPlayed };
+            // Для итогового сообщения в чате возвращаем CHAT ELO
+            return { oldElo: playerChatELO, newElo: newChatELO, delta: finalChatDelta, gamesPlayed };
 
         } catch (error) {
             await client.query('ROLLBACK');

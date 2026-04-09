@@ -1253,31 +1253,9 @@ export class BelkaGame {
         };
     }
 
-    public checkForReshuffle(playerId: number): boolean {
-        const player = this.state.players.find(p => p.id === playerId);
-        if (!player) return false;
-
-        // Возвращаем только правило по перекосу масти (без проверки pointsInHand).
-        // Если у игрока 5+ карт одной НЕ-валетной масти и при этом нет валетов — пересдаём.
-        const suitCounts = {
-            '♠': 0,
-            '♣': 0,
-            '♦': 0,
-            '♥': 0
-        };
-
-        let hasJack = false;
-
-        for (const card of player.cards) {
-            if (card.rank === 'J') {
-                hasJack = true;
-            } else {
-                suitCounts[card.suit]++;
-            }
-        }
-
-        const maxSuitCount = Math.max(...Object.values(suitCounts));
-        return maxSuitCount >= 5 && !hasJack;
+    public checkForReshuffle(_playerId: number): boolean {
+        // Пересдача отключена: играем полностью рандомными раздачами без фильтрации по руке.
+        return false;
     }
 
     private getCardPoints(card: Card): number {
