@@ -178,7 +178,11 @@ export class BelkaGame {
             score: 0,
             tricks: 0,
             totalTricks: 0,
-            chatId: this.state.chatId
+            chatId: this.state.chatId,
+            matchPointsTaken: 0,
+            matchTricksTaken: 0,
+            handStrengthSum: 0,
+            handStrengthRounds: 0
         };
 
         this.state.players.push(newPlayer);
@@ -209,6 +213,14 @@ export class BelkaGame {
         this.state.initialClubJackHolder = null;
         this.state.clubJackHolder = null;
         this.state.gameMode = mode;
+
+        // Сбрасываем матчевые персональные метрики для ELO
+        for (const player of this.state.players) {
+            player.matchPointsTaken = 0;
+            player.matchTricksTaken = 0;
+            player.handStrengthSum = 0;
+            player.handStrengthRounds = 0;
+        }
 
         console.log(`[LOG] Запуск игры в режиме: ${mode}`);
         console.log(`[LOG] Первый ход в первом раунде передан игроку ${this.state.players[0].username}`);
@@ -259,6 +271,9 @@ export class BelkaGame {
         for (const player of this.state.players) {
             this.sortPlayerHand(player.cards);
         }
+
+        // Фиксируем силу стартовых рук текущего раунда для ELO-оценки
+        this.captureRoundHandStrength();
 
         // Возвращаем информацию о начальном состоянии игры
         return this.getGameSummary();
@@ -448,6 +463,7 @@ export class BelkaGame {
         }
 
         winningPlayer.tricks = (winningPlayer.tricks || 0) + 1;
+        winningPlayer.matchTricksTaken = (winningPlayer.matchTricksTaken || 0) + 1;
 
         // Определяем команду победителя
         const winningTeam = this.state.teams.team1.players.some(p => p.id === winningPlayerId) ? 1 : 2;
@@ -457,6 +473,7 @@ export class BelkaGame {
         for (const tableCard of this.state.tableCards) {
             roundScore += this.getCardPoints(tableCard.card);
         }
+        winningPlayer.matchPointsTaken = (winningPlayer.matchPointsTaken || 0) + roundScore;
 
         if (winningTeam === 1) {
             this.state.teams.team1.score += roundScore;
@@ -627,6 +644,53 @@ export class BelkaGame {
         return points;
     }
 
+    // Рассчитываем относительную силу стартовой руки игрока в текущем раунде (0..1)
+    private calculateHandStrength(cards: Card[]): number {
+        if (!cards.length) return 0.5;
+
+        const rankBase: { [key in CardRank]: number } = {
+            '7': 0.2,
+            '8': 0.35,
+            '9': 0.6,
+            'Q': 1.2,
+            'K': 1.5,
+            '10': 2.2,
+            'A': 2.5,
+            'J': 2.8
+        };
+
+        const jackBonus: { [key in CardSuit]: number } = {
+            '♣': 3.5,
+            '♠': 3.0,
+            '♥': 2.5,
+            '♦': 2.2
+        };
+
+        let total = 0;
+        for (const card of cards) {
+            if (card.rank === 'J') {
+                total += rankBase[card.rank] + jackBonus[card.suit];
+                continue;
+            }
+
+            const isTrump = this.state.trump !== null && card.suit === this.state.trump;
+            total += rankBase[card.rank] * (isTrump ? 1.55 : 1.0);
+        }
+
+        // Практический диапазон для 8 карт: примерно 10..45
+        const normalized = (total - 10) / 35;
+        return Math.max(0, Math.min(1, normalized));
+    }
+
+    // Сохраняем силу стартовой руки по каждому раунду для итоговой матчевой оценки
+    private captureRoundHandStrength(): void {
+        for (const player of this.state.players) {
+            const strength = this.calculateHandStrength(player.cards);
+            player.handStrengthSum = (player.handStrengthSum || 0) + strength;
+            player.handStrengthRounds = (player.handStrengthRounds || 0) + 1;
+        }
+    }
+
     private startNewRound(): void {
         // Увеличиваем номер раунда
         this.state.currentRound++;
@@ -697,6 +761,9 @@ export class BelkaGame {
         for (const player of this.state.players) {
             this.sortPlayerHand(player.cards);
         }
+
+        // Фиксируем силу стартовых рук текущего раунда для ELO-оценки
+        this.captureRoundHandStrength();
 
         console.log(`[LOG] Раунд ${this.state.currentRound} инициализирован. Козырь: ${this.state.trump}, держатель валета крести: ${this.state.clubJackHolder?.username || 'не найден'}`);
     }
@@ -1041,6 +1108,9 @@ export class BelkaGame {
                     player.id, player.username, true,
                     winningTeamData.totalScore, winningTeamData.totalTricks,
                     isGolden,
+                    player.matchPointsTaken || 0,
+                    player.matchTricksTaken || 0,
+                    (player.handStrengthRounds || 0) > 0 ? ((player.handStrengthSum || 0) / (player.handStrengthRounds || 1)) : 0.5,
                     teammate?.id ?? player.id,
                     losers[0].id, losers[1].id,
                     this.state.chatId
@@ -1061,6 +1131,9 @@ export class BelkaGame {
                     player.id, player.username, false,
                     losingTeamData.totalScore, losingTeamData.totalTricks,
                     false,
+                    player.matchPointsTaken || 0,
+                    player.matchTricksTaken || 0,
+                    (player.handStrengthRounds || 0) > 0 ? ((player.handStrengthSum || 0) / (player.handStrengthRounds || 1)) : 0.5,
                     teammate?.id ?? player.id,
                     winners[0].id, winners[1].id,
                     this.state.chatId

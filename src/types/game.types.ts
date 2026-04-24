@@ -15,6 +15,11 @@ export interface Player {
     tricks: number;
     totalTricks: number; // Общие взятки за всю игру
     chatId: number;
+    // Метрики текущего матча для расчета ELO
+    matchPointsTaken?: number;
+    matchTricksTaken?: number;
+    handStrengthSum?: number;
+    handStrengthRounds?: number;
 }
 
 export interface Team {

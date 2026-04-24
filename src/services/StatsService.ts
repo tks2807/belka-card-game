@@ -127,54 +127,29 @@ export class StatsService {
         }
     }
 
-    // Расчет модификатора качества игры (без бонуса за голую — он добавляется фиксированно)
+    // Расчет модификатора качества игры только по текущему матчу
+    // Идея: фактический вклад игрока в матч vs ожидаемый вклад по силе его стартовой руки
     private calculatePerformanceModifier(
-        score: number,
-        tricks: number,
-        avgScore: number,
-        avgTricks: number
+        personalPointsTaken: number,
+        personalTricksTaken: number,
+        teamPoints: number,
+        teamTricks: number,
+        handStrength: number,
+        alpha = 0.6
     ): number {
-        let modifier = 1.0; // Базовый модификатор
+        const safeTeamPoints = Math.max(1, teamPoints);
+        const safeTeamTricks = Math.max(1, teamTricks);
 
-        // Модификатор за очки (±20%)
-        const scoreRatio = avgScore > 0 ? score / avgScore : 1;
-        const scoreModifier = Math.min(Math.max(scoreRatio, 0.5), 2.0);
-        modifier *= (0.8 + 0.4 * (scoreModifier - 0.5));
+        const pointsShare = Math.max(0, Math.min(1, personalPointsTaken / safeTeamPoints));
+        const tricksShare = Math.max(0, Math.min(1, personalTricksTaken / safeTeamTricks));
 
-        // Модификатор за взятки (±15%)
-        const tricksRatio = avgTricks > 0 ? tricks / avgTricks : 1;
-        const tricksModifier = Math.min(Math.max(tricksRatio, 0.5), 2.0);
-        modifier *= (0.85 + 0.3 * (tricksModifier - 0.5));
+        const impact = 0.65 * pointsShare + 0.35 * tricksShare;
 
-        // Ограничиваем итоговый модификатор от 0.5 до 2.0
-        return Math.min(Math.max(modifier, 0.5), 2.0);
-    }
+        const normalizedHandStrength = Math.max(0, Math.min(1, handStrength));
+        const expectedImpact = 0.5 + 0.3 * (normalizedHandStrength - 0.5);
 
-    // Получение средних показателей игрока для расчета модификатора
-    private async getPlayerAverages(playerId: number): Promise<{avgScore: number, avgTricks: number}> {
-        const client = await pool.connect();
-        try {
-            const result = await client.query(`
-                SELECT 
-                    CASE WHEN season_games_played > 0 THEN season_total_score::decimal / season_games_played ELSE 0 END as avg_score,
-                    CASE WHEN season_games_played > 0 THEN season_total_tricks::decimal / season_games_played ELSE 0 END as avg_tricks
-                FROM global_stats 
-                WHERE player_id = $1
-            `, [playerId]);
-            
-            if (result.rows.length > 0) {
-                return {
-                    avgScore: Number(result.rows[0].avg_score) || 60, // Дефолт 60 очков
-                    avgTricks: Number(result.rows[0].avg_tricks) || 3  // Дефолт 3 взятки
-                };
-            }
-            return { avgScore: 60, avgTricks: 3 };
-        } catch (error) {
-            console.error('Error getting player averages:', error);
-            return { avgScore: 60, avgTricks: 3 };
-        } finally {
-            client.release();
-        }
+        const raw = 1 + alpha * (impact - expectedImpact);
+        return Math.max(0.85, Math.min(1.15, raw));
     }
 
     // Объединенное обновление гибридного рейтинга (#5, #7, #8, #9, #10, #12)
@@ -186,6 +161,9 @@ export class StatsService {
         score: number,
         tricks: number,
         isGolden: boolean,
+        personalPointsTaken: number,
+        personalTricksTaken: number,
+        handStrength: number,
         teammateId: number,
         opponent1Id: number,
         opponent2Id: number,
@@ -216,9 +194,6 @@ export class StatsService {
             const gamesPlayed = gamesResult.rows.length > 0 ? Number(gamesResult.rows[0].season_games_played) : 0;
             const K = this.getDynamicKFactor(gamesPlayed);
 
-            // Получаем средние показатели для performance modifier
-            const { avgScore, avgTricks } = await this.getPlayerAverages(playerId);
-
             const actualScore = won ? 1 : 0;
 
             // #8: Индивидуальный расчёт ELO (игрок vs каждый противник отдельно)
@@ -236,8 +211,15 @@ export class StatsService {
             ) / 2;
             let chatDelta = K * (actualScore - chatExpected);
 
-            // Performance modifier (score/tricks, без голой — #10)
-            const perfMod = this.calculatePerformanceModifier(score, tricks, avgScore, avgTricks);
+            // Performance modifier по текущему матчу (персональный вклад + сила стартовой руки)
+            const perfMod = this.calculatePerformanceModifier(
+                personalPointsTaken,
+                personalTricksTaken,
+                score,
+                tricks,
+                handStrength,
+                0.6
+            );
             globalDelta *= perfMod;
             chatDelta *= perfMod;
 
