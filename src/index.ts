@@ -499,6 +499,7 @@ bot.telegram.setMyCommands([
     { command: 'join', description: 'Присоединиться к игре' },
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
+    { command: 'lasttrick', description: 'Показать последнюю сыгранную взятку' },
     //{ command: 'time', description: 'Включить автоматические ходы (30 сек)' },
     { command: 'swap', description: 'Обмен местами: первый пишет /swap, второй тоже /swap — меняются' },
     { command: 'swapcancel', description: 'Отменить ожидание обмена (может только инициатор)' },
@@ -1057,6 +1058,41 @@ bot.command('state', async (ctx) => {
     } catch (error) {
         console.error('Ошибка в команде /state:', error);
         // Не выбрасываем ошибку дальше, чтобы не останавливать бота
+    }
+});
+
+// Обработчик команды /lasttrick
+bot.command('lasttrick', async (ctx) => {
+    try {
+        const chatId = ctx.chat?.id;
+        if (!chatId) return;
+
+        // Используем ChatManager для получения актуального ID чата
+        const actualChatId = chatManager.getActualChatId(chatId);
+
+        // Проверяем, есть ли уже игра с актуальным ID чата
+        let game = games.get(actualChatId);
+
+        // Если игры нет с актуальным ID, проверяем старый ID
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                // Если нашли игру со старым ID, переносим её на новый
+                games.set(actualChatId, game);
+                games.delete(chatId);
+                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
+            }
+        }
+
+        if (!game) {
+            await safeSendMessage(ctx, 'Игра не найдена. Создайте новую игру с помощью /join');
+            return;
+        }
+
+        await safeSendMessage(ctx, game.getLastTrickSummary());
+    } catch (error) {
+        console.error('Ошибка в команде /lasttrick:', error);
+        await safeSendMessage(ctx, 'Произошла ошибка при отображении последней взятки');
     }
 });
 
@@ -1630,8 +1666,9 @@ bot.command('help', (ctx) => {
 
 🃏 *Команды игры:*
 /startbelka - Начать игру Белка (до 12 глаз)
-/startwalka - Начать игру Шалқа (до 6 глаз) 
+/startwalka - Начать игру Шалқа (до 6 глаз)
 /join - Присоединиться к игре
+/lasttrick - Показать последнюю сыгранную взятку
 /endgame - Проголосовать за завершение игры
 /clearbot - Сбросить игру
 

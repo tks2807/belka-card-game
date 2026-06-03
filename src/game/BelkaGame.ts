@@ -1,4 +1,4 @@
-import { Card, Player, CardSuit, CardRank, TableCard } from '../types/game.types';
+import { Card, Player, CardSuit, CardRank, TableCard, LastTrick } from '../types/game.types';
 import { StatsService } from '../services/StatsService';
 import { MoveResult } from '../types/game.types';
 import * as crypto from 'crypto';
@@ -10,6 +10,7 @@ interface ExtendedGameState {
     currentPlayerIndex: number;
     deck: Card[];
     tableCards: TableCard[];
+    lastTrick: LastTrick | null;
     isActive: boolean;
     trump: CardSuit | null;
     currentRound: number;
@@ -53,6 +54,7 @@ export class BelkaGame {
             currentPlayerIndex: 0,
             deck: [],
             tableCards: [],
+            lastTrick: null,
             isActive: false,
             trump: null,
             currentRound: 1,
@@ -207,6 +209,7 @@ export class BelkaGame {
         // Начальный ход всегда у первого игрока (индекс 0)
         this.state.currentPlayerIndex = 0;
         this.state.tableCards = [];
+        this.state.lastTrick = null;
         this.state.eggsTiebreaker = false;
         this.state.hideClubJackHolder = true;
         this.state.playerSuitMap.clear();
@@ -462,6 +465,14 @@ export class BelkaGame {
             throw new Error("Не удалось найти победителя раунда");
         }
 
+        this.state.lastTrick = {
+            cards: this.state.tableCards.map(tableCard => ({
+                playerId: tableCard.playerId,
+                card: { ...tableCard.card }
+            })),
+            winnerId: winningPlayerId
+        };
+
         winningPlayer.tricks = (winningPlayer.tricks || 0) + 1;
         winningPlayer.matchTricksTaken = (winningPlayer.matchTricksTaken || 0) + 1;
 
@@ -517,6 +528,10 @@ export class BelkaGame {
         };
 
         return valueMap[card.rank] || 0;
+    }
+
+    private formatCardForMessage(card: Card): string {
+        return `${card.suit}\uFE0F${card.rank}`;
     }
 
     private createRoundSummary(): string {
@@ -1174,6 +1189,26 @@ export class BelkaGame {
         return gameState;
     }
 
+    public getLastTrickSummary(): string {
+        const lastTrick = this.state.lastTrick;
+
+        if (!lastTrick || lastTrick.cards.length === 0) {
+            return 'Последней взятки пока нет.';
+        }
+
+        let summary = '🃏 Карты на столе:\n';
+        for (const tableCard of lastTrick.cards) {
+            const player = this.state.players.find(p => p.id === tableCard.playerId);
+            const username = player?.username || 'Неизвестный игрок';
+            summary += `${username}: ${this.formatCardForMessage(tableCard.card)}\n`;
+        }
+
+        const winner = this.state.players.find(p => p.id === lastTrick.winnerId);
+        summary += `\n🏆 Взятку забрал: ${winner?.username || 'Неизвестный игрок'}`;
+
+        return summary;
+    }
+
     // === State persistence (#6) ===
 
     // Serialize game state to JSON-safe object
@@ -1194,6 +1229,7 @@ export class BelkaGame {
         const endVotes = new Set<number>(data.endVotes || []);
         this.state = {
             ...data,
+            lastTrick: data.lastTrick || null,
             playerSuitMap,
             endVotes
         };

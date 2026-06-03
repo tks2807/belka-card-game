@@ -33,10 +33,16 @@ export interface TableCard {
     playerId: number;
 }
 
+export interface LastTrick {
+    cards: TableCard[];
+    winnerId: number;
+}
+
 export interface GameState {
     players: Player[];
     currentPlayerIndex: number;
     tableCards: TableCard[];
+    lastTrick: LastTrick | null;
     isActive: boolean;
     trump: CardSuit | null;
     currentRound: number;
