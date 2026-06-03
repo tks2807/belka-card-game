@@ -486,6 +486,16 @@ function scheduleClearTrackedMoveMessages(chatId: number, delayMs = 1500) {
   }, delayMs);
 }
 
+function scheduleDeleteMessage(chatId: number, messageId: number, delayMs = 3000) {
+  setTimeout(async () => {
+    try {
+      await bot.telegram.deleteMessage(chatId, messageId);
+    } catch (e) {
+      console.log(`[LOG] Не удалось удалить сообщение ${messageId} в чате ${chatId}:`, (e as any)?.message || e);
+    }
+  }, delayMs);
+}
+
 // Заполнение соответствия стикеров картам
 for (const key in cardStickers) {
     const [suit, rank] = [key[0] as CardSuit, key.substring(1) as CardRank];
@@ -1089,7 +1099,10 @@ bot.command('lasttrick', async (ctx) => {
             return;
         }
 
-        await safeSendMessage(ctx, game.getLastTrickSummary());
+        const sent = await safeSendMessage(ctx, game.getLastTrickSummary());
+        if (sent?.message_id) {
+            scheduleDeleteMessage(actualChatId, sent.message_id, 3000);
+        }
     } catch (error) {
         console.error('Ошибка в команде /lasttrick:', error);
         await safeSendMessage(ctx, 'Произошла ошибка при отображении последней взятки');
