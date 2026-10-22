@@ -107,50 +107,19 @@ export class BelkaGame {
     }
 
     private shuffleDeck(deck: Card[]): Card[] {
-        // Перемешиваем колоду «на месте» (in-place), чтобы все вызовы работали
-        // корректно независимо от того, используется ли возвращаемое значение.
-        
-        // Выполняем несколько проходов перемешивания для лучшей рандомизации
-        for (let pass = 0; pass < 3; pass++) {
-            // Современный алгоритм Fisher-Yates (Knuth shuffle)
-            for (let i = deck.length - 1; i > 0; i--) {
-                // Используем crypto.randomBytes для криптографической стойкости
-                const j = this.getSecureRandomInt(i + 1);
-                [deck[i], deck[j]] = [deck[j], deck[i]];
-            }
+        // Один проход Fisher-Yates даёт равновероятную перестановку, если
+        // индекс выбирается равномерно. crypto.randomInt использует rejection
+        // sampling и поэтому не вносит modulo bias.
+        for (let i = deck.length - 1; i > 0; i--) {
+            const j = crypto.randomInt(i + 1);
+            [deck[i], deck[j]] = [deck[j], deck[i]];
         }
-        
-        // Дополнительное перемешивание методом "разрезания колоды" (in-place)
-        const cutPosition = this.getSecureRandomInt(deck.length);
-        deck.push(...deck.splice(0, cutPosition));
-        
         return deck;
-    }
-    
-    // Генерация криптографически стойкого случайного числа
-    private getSecureRandomInt(max: number): number {
-        try {
-            // Используем Node.js crypto для лучшей рандомности
-            const randomBytes = crypto.randomBytes(4);
-            const randomInt = randomBytes.readUInt32BE(0);
-            return randomInt % max;
-        } catch (error) {
-            // Fallback на улучшенный Math.random()
-            let random = Math.random();
-            
-            // Добавляем дополнительную энтропию из времени и процесса
-            const timeEntropy = (Date.now() % 1000) / 1000;
-            const processEntropy = Number(process.hrtime.bigint() % 1000n) / 1000;
-            
-            random = (random + timeEntropy + processEntropy) % 1;
-            
-            return Math.floor(random * max);
-        }
     }
 
     private selectTrump(): CardSuit {
         const suits: CardSuit[] = ['♠', '♣', '♦', '♥'];
-        return suits[this.getSecureRandomInt(suits.length)];
+        return suits[crypto.randomInt(suits.length)];
     }
 
     private calculateCardValue(card: Card): number {
@@ -230,7 +199,6 @@ export class BelkaGame {
 
         // Создаем и перемешиваем колоду
         this.state.deck = this.createDeck();
-        this.shuffleDeck(this.state.deck);
 
         // Раздаем карты игрокам
         this.dealCards();
@@ -248,7 +216,6 @@ export class BelkaGame {
             if (!needReshuffle) break;
             console.log(`[LOG] Выполняем пересдачу карт (попытка ${reshuffleAttempt + 1})`);
             this.state.deck = this.createDeck();
-            this.shuffleDeck(this.state.deck);
             this.dealCards();
         }
 
@@ -729,7 +696,6 @@ export class BelkaGame {
 
         // Создаем новую колоду, перемешиваем и раздаем карты
         this.state.deck = this.createDeck();
-        this.shuffleDeck(this.state.deck);
         console.log('[DEBUG] deck[0] after shuffle:', this.state.deck[0]);
         console.log('[DEBUG] deck[31] after shuffle:', this.state.deck[31]);
         this.dealCards();
@@ -747,7 +713,6 @@ export class BelkaGame {
             if (!needReshuffle) break;
             console.log(`[LOG] Выполняем пересдачу карт (попытка ${reshuffleAttempt + 1})`);
             this.state.deck = this.createDeck();
-            this.shuffleDeck(this.state.deck);
             this.dealCards();
         }
 
@@ -896,7 +861,6 @@ export class BelkaGame {
                 if (!needReshuffle) break;
                 console.log(`[LOG] Выполняем пересдачу карт (попытка ${reshuffleAttempt + 1})`);
                 this.state.deck = this.createDeck();
-                this.shuffleDeck(this.state.deck);
                 this.dealCards();
             }
             
