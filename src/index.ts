@@ -1222,7 +1222,9 @@ async function sendLeaderboardChatImproved(ctx: any, chatId: number, offset = 0,
 
 // Команды рейтинга
 bot.command('rating', async (ctx) => {
-  await sendLeaderboardAllImproved(ctx, 0);
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+  await sendLeaderboardChatImproved(ctx, chatManager.getActualChatId(chatId), 0);
 });
 
 bot.command('ratingall', async (ctx) => {
@@ -1585,7 +1587,7 @@ bot.command('endgame', async (ctx) => {
                     clearMoveTimer(actualChatId);
                     console.log(`[TIMER] Таймеры очищены после завершения игры голосованием в чате ${actualChatId}`);
                     
-                    await ctx.reply('Игра завершена по голосованию игроков. Используйте /join, чтобы начать новую игру.');
+                    await ctx.reply('Игра отменена по голосованию игроков. ELO и статистика не изменены. Используйте /join, чтобы начать новую игру.');
                 }
                 break;
             default:
@@ -1871,15 +1873,9 @@ bot.command('swap', async (ctx) => {
 
     const state = game.getGameState();
     
-    // Разрешаем обмен только если раунд еще не начался
-    if (state.teams.team1.tricks !== 0 && state.teams.team2.tricks !== 0) {
-      await safeSendMessage(ctx, 'Обмен местами разрешён только до начала раунда.');
-      return;
-    }
-
-    // Разрешаем обмен только между взятками (когда стол пуст)
-    if (state.tableCards.length > 0) {
-      await safeSendMessage(ctx, 'Обмен местами разрешён только между взятками (когда стол пуст).');
+    // Состав и места фиксируются сразу после /startbelka или /startwalka.
+    if (state.isActive) {
+      await safeSendMessage(ctx, 'Обмен местами доступен только до начала игры.');
       return;
     }
 

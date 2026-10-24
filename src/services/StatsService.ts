@@ -16,11 +16,10 @@ export class StatsService {
         SPECIAL_WEIGHT: 0.1       // Вес специальных достижений (яйца, голые)
     };
 
-    // Динамический K-фактор (#7): зависит от количества сыгранных игр
+    // Калибровка только в начале сезона: карточная игра достаточно дисперсна,
+    // поэтому после неё рейтинг двигается медленнее.
     private getDynamicKFactor(gamesPlayed: number): number {
-        if (gamesPlayed < 5) return 40;   // Калибровка
-        if (gamesPlayed < 30) return 24;  // Начинающий
-        return 16;                         // Опытный игрок
+        return gamesPlayed < 10 ? 24 : 12;
     }
 
     // Система рангов в казахском стиле
@@ -127,147 +126,93 @@ export class StatsService {
         }
     }
 
-    // Расчет модификатора качества игры только по текущему матчу
-    // Идея: фактический вклад игрока в матч vs ожидаемый вклад по силе его стартовой руки
-    private calculatePerformanceModifier(
-        personalPointsTaken: number,
-        personalTricksTaken: number,
-        teamPoints: number,
-        teamTricks: number,
-        handStrength: number,
-        alpha = 0.6
-    ): number {
-        const safeTeamPoints = Math.max(1, teamPoints);
-        const safeTeamTricks = Math.max(1, teamTricks);
-
-        const pointsShare = Math.max(0, Math.min(1, personalPointsTaken / safeTeamPoints));
-        const tricksShare = Math.max(0, Math.min(1, personalTricksTaken / safeTeamTricks));
-
-        const impact = 0.65 * pointsShare + 0.35 * tricksShare;
-
-        const normalizedHandStrength = Math.max(0, Math.min(1, handStrength));
-        const expectedImpact = 0.5 + 0.3 * (normalizedHandStrength - 0.5);
-
-        const raw = 1 + alpha * (impact - expectedImpact);
-        return Math.max(0.85, Math.min(1.15, raw));
-    }
-
-    // Объединенное обновление гибридного рейтинга (#5, #7, #8, #9, #10, #12)
-    // Принимает ID игроков вместо ELO для независимого расчёта глобального и чат-ELO
-    public async updateHybridRating(
-        playerId: number,
-        username: string,
-        won: boolean,
-        score: number,
-        tricks: number,
+    /**
+     * Updates one completed 2v2 match from a single, locked rating snapshot.
+     * A player's individual tricks, points, and hand are intentionally excluded:
+     * ELO measures the result of the pair, not an intra-team competition.
+     */
+    public async updateTeamRatings(
+        winners: Array<{ id: number; username: string }>,
+        losers: Array<{ id: number; username: string }>,
         isGolden: boolean,
-        personalPointsTaken: number,
-        personalTricksTaken: number,
-        handStrength: number,
-        teammateId: number,
-        opponent1Id: number,
-        opponent2Id: number,
         chatId: number
-    ): Promise<{ oldElo: number; newElo: number; delta: number; gamesPlayed: number }> {
+    ): Promise<Map<number, { oldElo: number; newElo: number; delta: number; gamesPlayed: number }>> {
+        if (winners.length !== 2 || losers.length !== 2) {
+            throw new Error('Team ELO requires exactly two players per team');
+        }
+
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
 
-            // Получаем глобальные ELO всех игроков (#5: независимые расчёты)
-            const playerELO = await this.getPlayerELO(playerId);
-            const teammateELO = await this.getPlayerELO(teammateId);
-            const opp1ELO = await this.getPlayerELO(opponent1Id);
-            const opp2ELO = await this.getPlayerELO(opponent2Id);
-
-            // Получаем чат-ELO всех игроков (#5)
-            const playerChatELO = await this.getPlayerChatELO(playerId, chatId);
-            const teammateChatELO = await this.getPlayerChatELO(teammateId, chatId);
-            const opp1ChatELO = await this.getPlayerChatELO(opponent1Id, chatId);
-            const opp2ChatELO = await this.getPlayerChatELO(opponent2Id, chatId);
-
-            // Получаем количество игр в текущем сезоне для динамического K-фактора (#7)
-            // Используем season_games_played чтобы калибровка сбрасывалась каждый сезон
-            const gamesResult = await client.query(
-                'SELECT COALESCE(season_games_played, 0) as season_games_played FROM global_stats WHERE player_id = $1',
-                [playerId]
-            );
-            const gamesPlayed = gamesResult.rows.length > 0 ? Number(gamesResult.rows[0].season_games_played) : 0;
-            const K = this.getDynamicKFactor(gamesPlayed);
-
-            const actualScore = won ? 1 : 0;
-
-            // #8: Индивидуальный расчёт ELO (игрок vs каждый противник отдельно)
-            // Глобальный ELO delta
-            const globalExpected = (
-                this.calculateExpectedScore(playerELO, opp1ELO) +
-                this.calculateExpectedScore(playerELO, opp2ELO)
-            ) / 2;
-            let globalDelta = K * (actualScore - globalExpected);
-
-            // Чат ELO delta (#5: использует чат-ELO противников)
-            const chatExpected = (
-                this.calculateExpectedScore(playerChatELO, opp1ChatELO) +
-                this.calculateExpectedScore(playerChatELO, opp2ChatELO)
-            ) / 2;
-            let chatDelta = K * (actualScore - chatExpected);
-
-            // Performance modifier по текущему матчу (персональный вклад + сила стартовой руки)
-            const perfMod = this.calculatePerformanceModifier(
-                personalPointsTaken,
-                personalTricksTaken,
-                score,
-                tricks,
-                handStrength,
-                0.6
-            );
-            globalDelta *= perfMod;
-            chatDelta *= perfMod;
-
-            // #10: Фиксированный бонус/штраф за голую (+15 победителям, -15 проигравшим)
-            if (isGolden) {
-                globalDelta += won ? 15 : -15;
-                chatDelta += won ? 15 : -15;
+            const players = [...winners, ...losers];
+            const playerIds = players.map(player => player.id);
+            for (const player of players) {
+                await client.query(
+                    'INSERT INTO players (player_id, username) VALUES ($1, $2) ON CONFLICT (player_id) DO UPDATE SET username = EXCLUDED.username',
+                    [player.id, player.username]
+                );
+                await client.query('INSERT INTO global_stats (player_id) VALUES ($1) ON CONFLICT (player_id) DO NOTHING', [player.id]);
+                await client.query('INSERT INTO chat_stats (chat_id, player_id) VALUES ($1, $2) ON CONFLICT (chat_id, player_id) DO NOTHING', [chatId, player.id]);
             }
 
-            // #9: Ограничение изменений ELO
-            if (won) {
-                if (globalDelta < 1) globalDelta = 1;
-                if (chatDelta < 1) chatDelta = 1;
-            } else {
-                if (globalDelta < -20) globalDelta = -20;
-                if (chatDelta < -20) chatDelta = -20;
+            const globalRows = await client.query(
+                'SELECT player_id, elo_rating, COALESCE(season_games_played, 0) AS season_games_played FROM global_stats WHERE player_id = ANY($1::bigint[]) FOR UPDATE',
+                [playerIds]
+            );
+            const chatRows = await client.query(
+                'SELECT player_id, elo_rating, COALESCE(season_games_played, 0) AS season_games_played FROM chat_stats WHERE chat_id = $1 AND player_id = ANY($2::bigint[]) FOR UPDATE',
+                [chatId, playerIds]
+            );
+
+            const toRatings = (rows: any[]) => new Map(rows.map(row => [
+                Number(row.player_id),
+                { elo: Number(row.elo_rating), games: Number(row.season_games_played) }
+            ]));
+            const global = toRatings(globalRows.rows);
+            const chat = toRatings(chatRows.rows);
+
+            const calculateDeltas = (ratings: Map<number, { elo: number; games: number }>) => {
+                const winnerRating = (ratings.get(winners[0].id)!.elo + ratings.get(winners[1].id)!.elo) / 2;
+                const loserRating = (ratings.get(losers[0].id)!.elo + ratings.get(losers[1].id)!.elo) / 2;
+                const gamesBeforeMatch = Math.min(...playerIds.map(id => ratings.get(id)!.games));
+                const k = this.getDynamicKFactor(gamesBeforeMatch);
+                const expectedWinner = this.calculateExpectedScore(winnerRating, loserRating);
+                const baseWinnerDelta = Math.round(k * (1 - expectedWinner));
+                const winnerDelta = baseWinnerDelta + (isGolden ? 10 : 0);
+                return { winnerDelta, loserDelta: -baseWinnerDelta, k };
+            };
+
+            const globalDelta = calculateDeltas(global);
+            const chatDelta = calculateDeltas(chat);
+            const changes = new Map<number, { oldElo: number; newElo: number; delta: number; gamesPlayed: number }>();
+
+            for (const player of players) {
+                const won = winners.some(winner => winner.id === player.id);
+                const globalOld = global.get(player.id)!;
+                const chatOld = chat.get(player.id)!;
+                const nextGlobal = Math.min(Math.max(globalOld.elo + (won ? globalDelta.winnerDelta : globalDelta.loserDelta), 500), 9999);
+                const nextChat = Math.min(Math.max(chatOld.elo + (won ? chatDelta.winnerDelta : chatDelta.loserDelta), 500), 9999);
+
+                await client.query('UPDATE global_stats SET elo_rating = $2 WHERE player_id = $1', [player.id, nextGlobal]);
+                await client.query('UPDATE chat_stats SET elo_rating = $3 WHERE chat_id = $1 AND player_id = $2', [chatId, player.id, nextChat]);
+                changes.set(player.id, {
+                    oldElo: chatOld.elo,
+                    newElo: nextChat,
+                    delta: won ? chatDelta.winnerDelta : chatDelta.loserDelta,
+                    gamesPlayed: chatOld.games + 1
+                });
             }
-
-            const newGlobalELO = Math.min(Math.max(Math.round(playerELO + globalDelta), 500), 9999);
-            const newChatELO = Math.min(Math.max(Math.round(playerChatELO + chatDelta), 500), 9999);
-
-            // Обновляем глобальный ELO
-            await client.query(`
-                INSERT INTO global_stats (player_id, elo_rating)
-                VALUES ($1, $2)
-                ON CONFLICT (player_id) DO UPDATE SET elo_rating = $2
-            `, [playerId, newGlobalELO]);
-
-            // Обновляем чат ELO
-            await client.query(`
-                INSERT INTO chat_stats (chat_id, player_id, elo_rating)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (chat_id, player_id) DO UPDATE SET elo_rating = $3
-            `, [chatId, playerId, newChatELO]);
 
             await client.query('COMMIT');
 
-            const finalGlobalDelta = Math.round(globalDelta);
-            const finalChatDelta = Math.round(chatDelta);
-            console.log(`ELO обновлён для ${username}: global ${playerELO} -> ${newGlobalELO} (delta: ${finalGlobalDelta > 0 ? '+' : ''}${finalGlobalDelta}, K=${K}); chat ${playerChatELO} -> ${newChatELO} (delta: ${finalChatDelta > 0 ? '+' : ''}${finalChatDelta})`);
-
-            // Для итогового сообщения в чате возвращаем CHAT ELO
-            return { oldElo: playerChatELO, newElo: newChatELO, delta: finalChatDelta, gamesPlayed };
+            console.log(`Командный ELO обновлён: global K=${globalDelta.k}, chat K=${chatDelta.k}, голая=${isGolden}`);
+            return changes;
 
         } catch (error) {
             await client.query('ROLLBACK');
-            console.error('Error updating hybrid rating:', error);
-            return { oldElo: 1000, newElo: 1000, delta: 0, gamesPlayed: 0 };
+            console.error('Error updating team rating:', error);
+            throw error;
         } finally {
             client.release();
         }

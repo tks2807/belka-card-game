@@ -181,6 +181,7 @@ export class BelkaGame {
         this.state.lastTrick = null;
         this.state.eggsTiebreaker = false;
         this.state.hideClubJackHolder = true;
+        this.state.endVotes.clear();
         this.state.playerSuitMap.clear();
         this.state.initialClubJackHolder = null;
         this.state.clubJackHolder = null;
@@ -1074,6 +1075,15 @@ export class BelkaGame {
         const loserEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number }> = [];
 
         try {
+            // Рейтинг считается один раз для обеих пар из одного снимка до
+            // обновления статистики. Личные очки/взятки на ELO не влияют.
+            const eloChanges = await this.statsService.updateTeamRatings(
+                winners.map(player => ({ id: player.id, username: player.username })),
+                losers.map(player => ({ id: player.id, username: player.username })),
+                isGolden,
+                this.state.chatId
+            );
+
             // Обновляем статистику для победителей
             for (const player of winners) {
                 await this.statsService.updatePlayerStats(
@@ -1081,20 +1091,7 @@ export class BelkaGame {
                     winningTeamData.totalScore, player.totalTricks || 0,
                     false, isGolden, this.state.chatId, true, this.state.currentRound
                 );
-
-                const teammate = winners.find(p => p.id !== player.id);
-                const eloResult = await this.statsService.updateHybridRating(
-                    player.id, player.username, true,
-                    winningTeamData.totalScore, winningTeamData.totalTricks,
-                    isGolden,
-                    player.matchPointsTaken || 0,
-                    player.matchTricksTaken || 0,
-                    (player.handStrengthRounds || 0) > 0 ? ((player.handStrengthSum || 0) / (player.handStrengthRounds || 1)) : 0.5,
-                    teammate?.id ?? player.id,
-                    losers[0].id, losers[1].id,
-                    this.state.chatId
-                );
-                winnerEloChanges.push({ username: player.username, ...eloResult });
+                winnerEloChanges.push({ username: player.username, ...eloChanges.get(player.id)! });
             }
 
             // Обновляем статистику для проигравших
@@ -1104,20 +1101,7 @@ export class BelkaGame {
                     losingTeamData.totalScore, player.totalTricks || 0,
                     false, false, this.state.chatId, true, this.state.currentRound
                 );
-
-                const teammate = losers.find(p => p.id !== player.id);
-                const eloResult = await this.statsService.updateHybridRating(
-                    player.id, player.username, false,
-                    losingTeamData.totalScore, losingTeamData.totalTricks,
-                    false,
-                    player.matchPointsTaken || 0,
-                    player.matchTricksTaken || 0,
-                    (player.handStrengthRounds || 0) > 0 ? ((player.handStrengthSum || 0) / (player.handStrengthRounds || 1)) : 0.5,
-                    teammate?.id ?? player.id,
-                    winners[0].id, winners[1].id,
-                    this.state.chatId
-                );
-                loserEloChanges.push({ username: player.username, ...eloResult });
+                loserEloChanges.push({ username: player.username, ...eloChanges.get(player.id)! });
             }
 
             if (isGolden) {
@@ -1312,11 +1296,9 @@ export class BelkaGame {
         const requiredVotes = 3; // Требуется 3 голоса из 4 игроков
         const gameEnded = votesCount >= requiredVotes;
 
-        if (gameEnded) {
-            // Определяем победителя по текущему счету
-            const winningTeam = this.state.teams.team1.eyes > this.state.teams.team2.eyes ? 1 : 2;
-            this.endGame(false, winningTeam); // Добавляем второй параметр - номер команды
-        }
+        // Досрочное завершение — только отмена. Результат незаконченной игры
+        // не влияет ни на статистику, ни на ELO.
+        if (gameEnded) this.state.isActive = false;
 
         return {
             status: 'voted',
@@ -1396,11 +1378,8 @@ export class BelkaGame {
         secondPlayerData: { id: number; username: string;},
         chatId: number,
     ): { success: boolean; message: string } {
-        if (!this.state.isActive) {
-            return { success: false, message: 'Игра неактивна' };
-        }
-        if (this.state.tableCards.length > 0) {
-            return { success: false, message: 'Замену можно делать только между взятками (когда стол пуст)' };
+        if (this.state.isActive) {
+            return { success: false, message: 'Обмен местами доступен только до начала игры' };
         }
         const { id: id1, username: username1 } = firstPlayerData;
         const { id: id2, username: username2 } = secondPlayerData;
