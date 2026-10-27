@@ -509,6 +509,7 @@ bot.telegram.setMyCommands([
     { command: 'join', description: 'Присоединиться к игре' },
     { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
     { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
+    { command: 'rematch', description: 'Реванш теми же четырьмя игроками' },
     { command: 'lasttrick', description: 'Показать последнюю сыгранную взятку' },
     //{ command: 'time', description: 'Включить автоматические ходы (30 сек)' },
     { command: 'swap', description: 'Обмен местами: первый пишет /swap, второй тоже /swap — меняются' },
@@ -521,7 +522,9 @@ bot.telegram.setMyCommands([
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
     { command: 'ranks', description: 'Показать систему рангов' },
-    { command: 'myrank', description: 'Мой ранг в этом чате' }
+    { command: 'myrank', description: 'Мой ранг и активный титул' },
+    { command: 'titles', description: 'Мои открытые титулы' },
+    { command: 'title', description: 'Выбрать активный титул' }
 ]).then(() => {
     // Включаем инлайн-режим
     return bot.telegram.setWebhook(''); // Сбрасываем вебхук для long polling
@@ -1026,6 +1029,24 @@ bot.command('startwalka', async (ctx) => {
         console.error('Ошибка в команде /startwalka:', error);
         // Не выбрасываем ошибку дальше, чтобы не останавливать бота
     }
+});
+
+// Быстрый реванш теми же четырьмя игроками и в том же режиме.
+bot.command('rematch', async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const actualChatId = chatManager.getActualChatId(chatId);
+    const game = games.get(actualChatId);
+    if (!game) return await safeSendMessage(ctx, 'Предыдущей игры для реванша нет. Используйте /join.');
+    const state = game.getGameState();
+    if (state.isActive || state.players.length !== 4) return await safeSendMessage(ctx, 'Реванш доступен после завершённой игры с теми же четырьмя игроками.');
+    const summary = game.startGame(state.gameMode);
+    const next = game.getGameState();
+    initEmojiMapForDeal(actualChatId);
+    next.players.forEach(player => playerCardsInPrivateChat.set(player.id, { cards: [...player.cards], gameId: actualChatId }));
+    await safeSendMessage(ctx, `🔁 Реванш! ${summary}`, { reply_markup: { inline_keyboard: [[{ text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }]] } });
+    const first = next.players[next.currentPlayerIndex];
+    if (first) setMoveTimer(actualChatId, first.id);
 });
 
 // Обработчик команды /state
@@ -1732,12 +1753,15 @@ bot.command('myrank', async (ctx) => {
     
     // Показываем только чат ELO
     const playerELO = await statsService.getPlayerChatELO(userId, chatId);
+    const features = await statsService.getChatFeatures(userId, chatId);
     const rank = statsService.getRankByELO(playerELO);
     const progress = statsService.getRankProgress(playerELO);
     
     let message = `🎖 *Ваш ранг в этом чате, ${username}* 🎖\n\n`;
     message += `${rank.icon} **${rank.name}**\n`;
     message += `📊 ELO: ${playerELO}\n`;
+    message += `🔥 Победная серия: ${features.winStreak} | Рекорд: ${features.bestWinStreak}\n`;
+    if (features.activeTitle) message += `🏷 Титул: ${features.activeTitle}\n`;
     message += `📝 ${rank.description}\n\n`;
     
     if (progress.next) {
@@ -1752,6 +1776,27 @@ bot.command('myrank', async (ctx) => {
     message += '💪 Продолжайте играть в этом чате для повышения рейтинга!';
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
+});
+
+bot.command('titles', async (ctx) => {
+    const userId = ctx.from?.id;
+    const chatId = ctx.chat?.id;
+    if (!userId || !chatId) return;
+    const features = await new StatsService().getChatFeatures(userId, chatManager.getActualChatId(chatId));
+    const list = features.titles.length ? features.titles.map(title => `• ${title}`).join('\n') : 'Пока нет открытых титулов.';
+    await ctx.reply(`🏷 Ваш активный титул: ${features.activeTitle || 'нет'}\n\n🎖 Открытые титулы:\n${list}\n\nВыбрать: /title название`);
+});
+
+bot.command('title', async (ctx) => {
+    const userId = ctx.from?.id;
+    const chatId = ctx.chat?.id;
+    const title = ctx.message.text.replace(/^\/title\s*/i, '').trim();
+    if (!userId || !chatId || !title) {
+        await ctx.reply('Использование: /title название титула');
+        return;
+    }
+    const ok = await new StatsService().setActiveTitle(userId, chatManager.getActualChatId(chatId), title);
+    await ctx.reply(ok ? `🏷 Активный титул: ${title}` : 'Такой титул ещё не открыт. Посмотрите /titles');
 });
 
 // === Season commands (#11) ===

@@ -302,7 +302,7 @@ export class StatsService {
 
           // Update chat stats (alltime + season columns)
           await client.query(`
-              INSERT INTO chat_stats 
+              INSERT INTO chat_stats
               (chat_id, player_id, games_played, games_won, total_score, total_tricks, total_rounds, eggs_count, golaya_count,
                season_games_played, season_games_won, season_total_score, season_total_tricks, season_eggs_count, season_golaya_count) 
               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $3, $4, $5, $6, $8, $9)
@@ -332,6 +332,42 @@ export class StatsService {
               golayaInc
           ]);
 
+          if (countGame) {
+              const featureResult = await client.query(
+                  `SELECT win_streak, best_win_streak, active_title, unlocked_titles
+                   FROM player_chat_features WHERE chat_id = $1 AND player_id = $2 FOR UPDATE`,
+                  [chatId, playerId]
+              );
+              const feature = featureResult.rows[0] || { win_streak: 0, best_win_streak: 0, active_title: null, unlocked_titles: [] };
+              const streak = won ? Number(feature.win_streak) + 1 : 0;
+              const bestStreak = Math.max(Number(feature.best_win_streak), streak);
+              const totals = await client.query(
+                  `SELECT season_games_played, season_games_won, season_golaya_count
+                   FROM chat_stats WHERE chat_id = $1 AND player_id = $2`,
+                  [chatId, playerId]
+              );
+              const total = totals.rows[0];
+              const titles = Array.isArray(feature.unlocked_titles) ? [...feature.unlocked_titles] : [];
+              const unlock = (title: string, condition: boolean) => { if (condition && !titles.includes(title)) titles.push(title); };
+              unlock('🎯 Победитель', Number(total.season_games_won) >= 1);
+              unlock('🔥 На серии', bestStreak >= 3);
+              unlock('⚡ Неостановим', bestStreak >= 5);
+              unlock('🎯 Голая рука', Number(total.season_golaya_count) >= 1);
+              unlock('👑 Мастер голой', Number(total.season_golaya_count) >= 3);
+              unlock('🃏 Ветеран', Number(total.season_games_played) >= 25);
+              unlock('🏆 Чемпион', Number(total.season_games_won) >= 25);
+              unlock('💯 Сотник', Number(total.season_games_played) >= 100);
+              const activeTitle = feature.active_title && titles.includes(feature.active_title) ? feature.active_title : (titles[titles.length - 1] || null);
+              await client.query(
+                  `INSERT INTO player_chat_features (chat_id, player_id, win_streak, best_win_streak, active_title, unlocked_titles)
+                   VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                   ON CONFLICT (chat_id, player_id) DO UPDATE SET
+                     win_streak = EXCLUDED.win_streak, best_win_streak = EXCLUDED.best_win_streak,
+                     active_title = EXCLUDED.active_title, unlocked_titles = EXCLUDED.unlocked_titles`,
+                  [chatId, playerId, streak, bestStreak, activeTitle, JSON.stringify(titles)]
+              );
+          }
+
           await client.query('COMMIT');
       } catch (error) {
           await client.query('ROLLBACK');
@@ -341,6 +377,22 @@ export class StatsService {
           client.release();
       }
   }
+
+    public async getChatFeatures(playerId: number, chatId: number): Promise<{ winStreak: number; bestWinStreak: number; activeTitle: string | null; titles: string[] }> {
+        const result = await pool.query(
+            'SELECT win_streak, best_win_streak, active_title, unlocked_titles FROM player_chat_features WHERE chat_id = $1 AND player_id = $2',
+            [chatId, playerId]
+        );
+        const row = result.rows[0];
+        return row ? { winStreak: Number(row.win_streak), bestWinStreak: Number(row.best_win_streak), activeTitle: row.active_title, titles: Array.isArray(row.unlocked_titles) ? row.unlocked_titles : [] } : { winStreak: 0, bestWinStreak: 0, activeTitle: null, titles: [] };
+    }
+
+    public async setActiveTitle(playerId: number, chatId: number, title: string): Promise<boolean> {
+        const features = await this.getChatFeatures(playerId, chatId);
+        if (!features.titles.includes(title)) return false;
+        await pool.query('UPDATE player_chat_features SET active_title = $3 WHERE chat_id = $1 AND player_id = $2', [chatId, playerId, title]);
+        return true;
+    }
 
     public async getLeaderboardAll(offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number }]>> {
         const client = await pool.connect();

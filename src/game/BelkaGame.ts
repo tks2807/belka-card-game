@@ -41,6 +41,13 @@ interface ExtendedGameState {
     hideClubJackHolder: boolean;
     eggsTiebreaker: boolean;
     gameMode: 'belka' | 'walka'; // Режим игры: "белка" до 12 глаз или "Шалқа" до 6 глаз
+    matchHistory: {
+        highestTrick: { playerId: number; points: number } | null;
+        trumpPlays: Record<string, number>;
+        cuts: Record<string, number>;
+        maxDeficitTeam1: number;
+        maxDeficitTeam2: number;
+    };
 }
 
 export class BelkaGame {
@@ -84,7 +91,8 @@ export class BelkaGame {
             playerSuitMap: new Map(),
             hideClubJackHolder: true,
             eggsTiebreaker: false,
-            gameMode: 'belka' // По умолчанию режим "белка"
+            gameMode: 'belka', // По умолчанию режим "белка"
+            matchHistory: { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 }
         };
     }
 
@@ -182,6 +190,7 @@ export class BelkaGame {
         this.state.eggsTiebreaker = false;
         this.state.hideClubJackHolder = true;
         this.state.endVotes.clear();
+        this.state.matchHistory = { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 };
         this.state.playerSuitMap.clear();
         this.state.initialClubJackHolder = null;
         this.state.clubJackHolder = null;
@@ -451,6 +460,19 @@ export class BelkaGame {
         let roundScore = 0;
         for (const tableCard of this.state.tableCards) {
             roundScore += this.getCardPoints(tableCard.card);
+            if (tableCard.card.rank === 'J' || tableCard.card.suit === this.state.trump) {
+                this.state.matchHistory.trumpPlays[tableCard.playerId] = (this.state.matchHistory.trumpPlays[tableCard.playerId] || 0) + 1;
+            }
+        }
+        if (!this.state.matchHistory.highestTrick || roundScore > this.state.matchHistory.highestTrick.points) {
+            this.state.matchHistory.highestTrick = { playerId: winningPlayerId, points: roundScore };
+        }
+        const lead = this.state.tableCards[0].card;
+        const winningCard = this.state.tableCards.find(tableCard => tableCard.playerId === winningPlayerId)?.card;
+        const leadIsTrump = lead.rank === 'J' || lead.suit === this.state.trump;
+        const winningWithTrump = winningCard && (winningCard.rank === 'J' || winningCard.suit === this.state.trump);
+        if (!leadIsTrump && winningWithTrump) {
+            this.state.matchHistory.cuts[winningPlayerId] = (this.state.matchHistory.cuts[winningPlayerId] || 0) + 1;
         }
         winningPlayer.matchPointsTaken = (winningPlayer.matchPointsTaken || 0) + roundScore;
 
@@ -946,6 +968,8 @@ export class BelkaGame {
         }
         
         this.state.eggsTiebreaker = false; // Сбрасываем флаг переигровки, если он был установлен
+        this.state.matchHistory.maxDeficitTeam1 = Math.max(this.state.matchHistory.maxDeficitTeam1, this.state.teams.team2.eyes - this.state.teams.team1.eyes);
+        this.state.matchHistory.maxDeficitTeam2 = Math.max(this.state.matchHistory.maxDeficitTeam2, this.state.teams.team1.eyes - this.state.teams.team2.eyes);
 
         // Формируем сообщение с результатами раунда
         let results = `📊 Результаты раунда ${this.state.currentRound}:\n\n`;
@@ -1062,6 +1086,25 @@ export class BelkaGame {
         return results;
     }
 
+    private getMatchHistorySummary(winningTeam: 1 | 2, isGolden: boolean): string {
+        const history = this.state.matchHistory;
+        const winner = winningTeam === 1 ? this.state.teams.team1 : this.state.teams.team2;
+        const loser = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
+        let summary = `\n\n📜 Итоги матча\n👁️ Счёт: ${winner.eyes}:${loser.eyes}${isGolden ? ' • голая' : ''}\n`;
+        if (history.highestTrick) {
+            const player = this.state.players.find(item => item.id === history.highestTrick!.playerId);
+            summary += `💰 Самая дорогая взятка: ${history.highestTrick.points} очков — @${player?.username || 'игрок'}\n`;
+        }
+        const topCutter = Object.entries(history.cuts).sort((a, b) => b[1] - a[1])[0];
+        if (topCutter) {
+            const player = this.state.players.find(item => item.id === Number(topCutter[0]));
+            summary += `🗡️ Больше всех срезов: @${player?.username || 'игрок'} — ${topCutter[1]}\n`;
+        }
+        const comeback = winningTeam === 1 ? history.maxDeficitTeam1 : history.maxDeficitTeam2;
+        if (comeback >= 3) summary += `🔥 Камбэк: команда ${winningTeam} отыгралась с отставания в ${comeback} глаз\n`;
+        return summary;
+    }
+
     private async endGame(isGolden: boolean, winningTeam: 1 | 2): Promise<string> {
         this.state.isActive = false;
 
@@ -1128,7 +1171,7 @@ export class BelkaGame {
             const sign = c.delta >= 0 ? '+' : '';
             eloSummary += `• @${c.username}: ${c.oldElo} → ${c.newElo} (${sign}${c.delta}) ${rankName(c.newElo)}\n`;
         }
-        return eloSummary;
+        return eloSummary + this.getMatchHistorySummary(winningTeam, isGolden);
     }
 
     public getGameState(): Omit<ExtendedGameState, 'endVotes'> {
@@ -1178,6 +1221,7 @@ export class BelkaGame {
         this.state = {
             ...data,
             lastTrick: data.lastTrick || null,
+            matchHistory: data.matchHistory || { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 },
             playerSuitMap,
             endVotes
         };

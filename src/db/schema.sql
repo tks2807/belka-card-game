@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS chat_stats (
   UNIQUE(chat_id, player_id)
 );
 
+-- Игровые плашки и серии для конкретного чата
+CREATE TABLE IF NOT EXISTS player_chat_features (
+  chat_id BIGINT NOT NULL,
+  player_id BIGINT NOT NULL REFERENCES players(player_id) ON DELETE CASCADE,
+  win_streak INTEGER NOT NULL DEFAULT 0,
+  best_win_streak INTEGER NOT NULL DEFAULT 0,
+  active_title VARCHAR(64),
+  unlocked_titles JSONB NOT NULL DEFAULT '[]'::jsonb,
+  PRIMARY KEY (chat_id, player_id)
+);
+
 -- Create history table for global stats
 CREATE TABLE IF NOT EXISTS global_stats_history (
   id SERIAL PRIMARY KEY,
@@ -82,4 +93,4 @@ CREATE TABLE IF NOT EXISTS seasons (
   ended_at TIMESTAMP NULL,
   is_current BOOLEAN DEFAULT FALSE,
   description TEXT
-); 
+);
