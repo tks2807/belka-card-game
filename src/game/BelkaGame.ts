@@ -187,6 +187,15 @@ export class BelkaGame {
         this.state.currentPlayerIndex = 0;
         this.state.tableCards = [];
         this.state.lastTrick = null;
+        // startGame используется и для реванша: новый матч всегда начинается
+        // с чистого счёта, сохраняя только состав и места игроков.
+        for (const team of [this.state.teams.team1, this.state.teams.team2]) {
+            team.score = 0;
+            team.tricks = 0;
+            team.eyes = 0;
+            team.totalScore = 0;
+            team.totalTricks = 0;
+        }
         this.state.eggsTiebreaker = false;
         this.state.hideClubJackHolder = true;
         this.state.endVotes.clear();
