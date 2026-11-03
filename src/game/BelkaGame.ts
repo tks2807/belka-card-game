@@ -1368,7 +1368,7 @@ export class BelkaGame {
     }
 
     public async giveUp(playerId: number): Promise<{
-        status: 'not_player' | 'already_voted' | 'voted' | 'other_team_pending' | 'surrendered';
+        status: 'not_player' | 'no_round_points' | 'already_voted' | 'voted' | 'other_team_pending' | 'surrendered';
         surrenderingTeam?: 1 | 2;
         eloSummary?: string;
     }> {
@@ -1383,6 +1383,15 @@ export class BelkaGame {
         const surrenderingPlayers = surrenderingTeam === 1
             ? this.state.teams.team1.players
             : this.state.teams.team2.players;
+        const surrenderingTeamScore = surrenderingTeam === 1
+            ? this.state.teams.team1.score
+            : this.state.teams.team2.score;
+
+        // Нулевая команда не может сдаться и лишить соперников возможности
+        // закончить раунд «голой».
+        if (surrenderingTeamScore === 0) {
+            return { status: 'no_round_points', surrenderingTeam };
+        }
 
         // Нельзя одним голосованием смешать сдачу двух разных команд.
         if (this.state.giveUpVotes.size > 0 &&

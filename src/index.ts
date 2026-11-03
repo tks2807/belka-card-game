@@ -1646,6 +1646,9 @@ bot.command('giveup', async (ctx) => {
             case 'not_player':
                 await safeSendMessage(ctx, 'Сдаться может только участник активной игры.');
                 break;
+            case 'no_round_points':
+                await safeSendMessage(ctx, 'Сдаться нельзя: ваша команда ещё не взяла ни одного очка в этом раунде.');
+                break;
             case 'already_voted':
                 await safeSendMessage(ctx, 'Вы уже подтвердили сдачу. Ждём напарника.');
                 break;
