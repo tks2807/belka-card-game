@@ -519,6 +519,7 @@ bot.telegram.setMyCommands([
     { command: 'alltime', description: 'Всё-время статистика (без ELO)' },
     { command: 'history', description: 'История чемпионов по сезонам' },
     { command: 'endgame', description: 'Проголосовать за завершение игры' },
+    { command: 'giveup', description: 'Сдаться (нужно подтверждение напарника)' },
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
     { command: 'ranks', description: 'Показать систему рангов' },
@@ -730,6 +731,7 @@ bot.help(async (ctx) => {
 image.png
 🎮 Управление игрой:
 /endgame - Проголосовать за завершение игры
+/giveup - Сдаться (нужно подтверждение напарника)
 /clearbot - Сбросить текущую игру (в случае проблем)
 /warmuty - Показать благодарности участникам проекта
 
@@ -1617,6 +1619,54 @@ bot.command('endgame', async (ctx) => {
     } catch (error) {
         console.error('Ошибка в команде /endgame:', error);
         await ctx.reply('Произошла ошибка при обработке команды');
+    }
+});
+
+// Сдача засчитывается только при подтверждении обоих игроков одной команды.
+bot.command('giveup', async (ctx) => {
+    try {
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+        if (!chatId || !userId) return;
+
+        const actualChatId = chatManager.getActualChatId(chatId);
+        let game = games.get(actualChatId);
+        if (!game && chatId !== actualChatId) {
+            game = games.get(chatId);
+            if (game) {
+                games.set(actualChatId, game);
+                games.delete(chatId);
+            }
+        }
+        if (!game) return await safeSendMessage(ctx, 'Нет активной игры.');
+
+        const result = await game.giveUp(userId);
+        const username = ctx.from.username || 'игрок';
+        switch (result.status) {
+            case 'not_player':
+                await safeSendMessage(ctx, 'Сдаться может только участник активной игры.');
+                break;
+            case 'already_voted':
+                await safeSendMessage(ctx, 'Вы уже подтвердили сдачу. Ждём напарника.');
+                break;
+            case 'other_team_pending':
+                await safeSendMessage(ctx, 'Другая команда уже ожидает подтверждения сдачи от своего напарника.');
+                break;
+            case 'voted':
+                saveGameState(actualChatId, game).catch(console.error);
+                await safeSendMessage(ctx, `🏳️ @${username} предлагает сдаться за команду ${result.surrenderingTeam}. Нужна команда /giveup от его напарника.`);
+                break;
+            case 'surrendered': {
+                clearMoveTimer(actualChatId);
+                deleteGameState(actualChatId).catch(console.error);
+                const winner = result.surrenderingTeam === 1 ? 2 : 1;
+                await safeSendMessage(ctx, `🏳️ Команда ${result.surrenderingTeam} сдалась. Победа команды ${winner}!${result.eloSummary || ''}`);
+                break;
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка в команде /giveup:', error);
+        await safeSendMessage(ctx, 'Не удалось обработать сдачу.');
     }
 });
 

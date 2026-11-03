@@ -17,6 +17,7 @@ interface ExtendedGameState {
     trickWinner: Player | null;
     chatId: number;
     endVotes: Set<number>;
+    giveUpVotes: Set<number>;
     teams: {
         team1: {
             players: Player[];
@@ -68,6 +69,7 @@ export class BelkaGame {
             trickWinner: null,
             chatId: chatId,
             endVotes: new Set(),
+            giveUpVotes: new Set(),
             teams: {
                 team1: {
                     players: [],
@@ -199,6 +201,7 @@ export class BelkaGame {
         this.state.eggsTiebreaker = false;
         this.state.hideClubJackHolder = true;
         this.state.endVotes.clear();
+        this.state.giveUpVotes.clear();
         this.state.matchHistory = { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 };
         this.state.playerSuitMap.clear();
         this.state.initialClubJackHolder = null;
@@ -1183,9 +1186,9 @@ export class BelkaGame {
         return eloSummary + this.getMatchHistorySummary(winningTeam, isGolden);
     }
 
-    public getGameState(): Omit<ExtendedGameState, 'endVotes'> {
+    public getGameState(): Omit<ExtendedGameState, 'endVotes' | 'giveUpVotes'> {
         // Возвращаем состояние игры без внутренних полей
-        const { endVotes, ...gameState } = this.state;
+        const { endVotes, giveUpVotes, ...gameState } = this.state;
         return gameState;
     }
 
@@ -1213,11 +1216,12 @@ export class BelkaGame {
 
     // Serialize game state to JSON-safe object
     public getSerializableState(): object {
-        const { endVotes, playerSuitMap, ...rest } = this.state;
+        const { endVotes, giveUpVotes, playerSuitMap, ...rest } = this.state;
         return {
             ...rest,
             playerSuitMap: Array.from(playerSuitMap.entries()),
-            endVotes: Array.from(endVotes)
+            endVotes: Array.from(endVotes),
+            giveUpVotes: Array.from(giveUpVotes)
         };
     }
 
@@ -1227,12 +1231,14 @@ export class BelkaGame {
             (data.playerSuitMap || []).map(([k, v]: [any, any]) => [Number(k), v as CardSuit])
         );
         const endVotes = new Set<number>(data.endVotes || []);
+        const giveUpVotes = new Set<number>(data.giveUpVotes || []);
         this.state = {
             ...data,
             lastTrick: data.lastTrick || null,
             matchHistory: data.matchHistory || { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 },
             playerSuitMap,
-            endVotes
+            endVotes,
+            giveUpVotes
         };
     }
 
@@ -1359,6 +1365,39 @@ export class BelkaGame {
             requiredVotes,
             gameEnded
         };
+    }
+
+    public async giveUp(playerId: number): Promise<{
+        status: 'not_player' | 'already_voted' | 'voted' | 'other_team_pending' | 'surrendered';
+        surrenderingTeam?: 1 | 2;
+        eloSummary?: string;
+    }> {
+        if (!this.state.isActive) return { status: 'not_player' };
+
+        const team1HasPlayer = this.state.teams.team1.players.some(player => player.id === playerId);
+        const team2HasPlayer = this.state.teams.team2.players.some(player => player.id === playerId);
+        if (!team1HasPlayer && !team2HasPlayer) return { status: 'not_player' };
+        if (this.state.giveUpVotes.has(playerId)) return { status: 'already_voted' };
+
+        const surrenderingTeam: 1 | 2 = team1HasPlayer ? 1 : 2;
+        const surrenderingPlayers = surrenderingTeam === 1
+            ? this.state.teams.team1.players
+            : this.state.teams.team2.players;
+
+        // Нельзя одним голосованием смешать сдачу двух разных команд.
+        if (this.state.giveUpVotes.size > 0 &&
+            ![...this.state.giveUpVotes].every(id => surrenderingPlayers.some(player => player.id === id))) {
+            return { status: 'other_team_pending' };
+        }
+
+        this.state.giveUpVotes.add(playerId);
+        if (this.state.giveUpVotes.size < surrenderingPlayers.length) {
+            return { status: 'voted', surrenderingTeam };
+        }
+
+        const winningTeam: 1 | 2 = surrenderingTeam === 1 ? 2 : 1;
+        const eloSummary = await this.endGame(false, winningTeam);
+        return { status: 'surrendered', surrenderingTeam, eloSummary };
     }
 
     public checkForReshuffle(_playerId: number): boolean {
