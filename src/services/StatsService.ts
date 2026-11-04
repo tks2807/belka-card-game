@@ -19,7 +19,7 @@ export class StatsService {
     // Калибровка только в начале сезона: карточная игра достаточно дисперсна,
     // поэтому после неё рейтинг двигается медленнее.
     private getDynamicKFactor(gamesPlayed: number): number {
-        return gamesPlayed < 10 ? 24 : 12;
+        return gamesPlayed < 10 ? 24 : 18;
     }
 
     // Система рангов в казахском стиле
