@@ -825,6 +825,7 @@ export class BelkaGame {
         // Инициализируем переменные для глаз
         let team1Eyes = 0;
         let team2Eyes = 0;
+        const isEggsTiebreaker = this.state.eggsTiebreaker;
 
         // Накапливаем общие очки и взятки за всю игру перед проверками
         this.state.teams.team1.totalScore += this.state.teams.team1.score;
@@ -924,7 +925,7 @@ export class BelkaGame {
         }
 
         // Проверка, является ли этот раунд переигровкой после "яиц"
-        if (this.state.eggsTiebreaker) {
+        if (isEggsTiebreaker) {
             if (team1Won) {
                 this.state.teams.team1.eyes += 4;
                 team1Eyes = 4;
@@ -963,7 +964,7 @@ export class BelkaGame {
         }
 
         // Проверяем, у кого валет крести и добавляем дополнительный глаз (только не в первом раунде)
-        if (this.state.clubJackHolder && this.state.currentRound > 1 && !this.state.eggsTiebreaker) {
+        if (this.state.clubJackHolder && this.state.currentRound > 1 && !isEggsTiebreaker) {
             const isClubJackInTeam1 = this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id);
 
             // Если валет крести у команды 2, а выиграла команда 1
@@ -1021,10 +1022,10 @@ export class BelkaGame {
         results += `👑 Взятки: ${this.state.teams.team1.tricks}\n`;
 
         // Добавляем информацию о глазах
-        if (this.state.currentRound === 1 && team1Won) {
+        if (isEggsTiebreaker && team1Won) {
+            results += `👁️ Глаза в этом раунде: +${team1Eyes}\n`;
+        } else if (this.state.currentRound === 1 && team1Won) {
             results += `👁️ Глаза в этом раунде: +${team1Eyes} (первый раунд)\n`;
-        } else if (this.state.eggsTiebreaker && team1Won) {
-            results += `👁️ Глаза в этом раунде: +${team1Eyes} (переигровка после "яиц")\n`;
         } else if (this.state.currentRound > 1 && this.state.clubJackHolder &&
             !this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) &&
             team1Won) {
@@ -1061,10 +1062,10 @@ export class BelkaGame {
         results += `👑 Взятки: ${this.state.teams.team2.tricks}\n`;
 
         // Добавляем информацию о глазах
-        if (this.state.currentRound === 1 && team2Won) {
+        if (isEggsTiebreaker && team2Won) {
+            results += `👁️ Глаза в этом раунде: +${team2Eyes}\n`;
+        } else if (this.state.currentRound === 1 && team2Won) {
             results += `👁️ Глаза в этом раунде: +${team2Eyes} (первый раунд)\n`;
-        } else if (this.state.eggsTiebreaker && team2Won) {
-            results += `👁️ Глаза в этом раунде: +${team2Eyes} (переигровка после "яиц")\n`;
         } else if (this.state.currentRound > 1 && this.state.clubJackHolder &&
             this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) &&
             team2Won) {
