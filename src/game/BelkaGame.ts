@@ -41,6 +41,7 @@ interface ExtendedGameState {
     playerSuitMap: Map<number, CardSuit>; // Соответствие игроков и мастей для козырей
     hideClubJackHolder: boolean;
     eggsTiebreaker: boolean;
+    startedSuits: CardSuit[]; // Масти, с которых уже заходили первым в текущем раунде
     gameMode: 'belka' | 'walka'; // Режим игры: "белка" до 12 глаз или "Шалқа" до 6 глаз
     matchHistory: {
         highestTrick: { playerId: number; points: number } | null;
@@ -93,6 +94,7 @@ export class BelkaGame {
             playerSuitMap: new Map(),
             hideClubJackHolder: true,
             eggsTiebreaker: false,
+            startedSuits: [],
             gameMode: 'belka', // По умолчанию режим "белка"
             matchHistory: { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 }
         };
@@ -199,6 +201,7 @@ export class BelkaGame {
             team.totalTricks = 0;
         }
         this.state.eggsTiebreaker = false;
+        this.state.startedSuits = [];
         this.state.hideClubJackHolder = true;
         this.state.endVotes.clear();
         this.state.giveUpVotes.clear();
@@ -366,7 +369,7 @@ export class BelkaGame {
                     // Если у игрока есть козыри (включая вальтов), но он пытается ходить не козырем
                     return {
                         success: false,
-                        message: `Нужно ходить козырем (включая вальтов), так как первая карта козырная`
+                        message: '❌ Нельзя так ходить.'
                     };
                 }
             } else {
@@ -381,14 +384,37 @@ export class BelkaGame {
                         // Если игрок пытается ходить другой мастью или валетом
                         return {
                             success: false,
-                            message: `Нужно ходить в масть ${firstCardSuit}, валеты нельзя использовать, если у вас есть карты нужной масти`
+                            message: '❌ Нельзя так ходить.'
                         };
                     }
                 }
                 // Если у игрока нет карт масти первой карты, он может ходить любой картой (включая валетов)
             }
+
+            const leadPlayerId = this.state.tableCards[0].playerId;
+            const leadPlayerIsTeammate = this.areTeammates(playerId, leadPlayerId);
+            const leadIsNonTrumpSuit = firstCard.rank !== 'J' && firstCard.suit !== this.state.trump;
+            const playerHasLeadSuit = player.cards.some(c => c.suit === firstCardSuit && c.rank !== 'J');
+            const isOffSuitNonTrumpAce = card.rank === 'A' && card.suit !== this.state.trump;
+
+            // Нельзя сливать неигранного туза под взятку напарника. Масть считается
+            // сыгранной только после захода с неё первым, а не после простого сброса.
+            if (
+                leadPlayerIsTeammate &&
+                leadIsNonTrumpSuit &&
+                !playerHasLeadSuit &&
+                isOffSuitNonTrumpAce &&
+                !this.state.startedSuits.includes(card.suit) &&
+                this.isLeadPlayerCurrentlyWinning()
+            ) {
+                return {
+                    success: false,
+                    message: '❌ Нельзя так ходить.'
+                };
+            }
         }
 
+        const isTrickLead = this.state.tableCards.length === 0;
         // Удаляем карту из руки игрока
         player.cards.splice(cardIndex, 1);
         // Пересортировываем оставшиеся карты
@@ -396,6 +422,9 @@ export class BelkaGame {
 
         // Добавляем карту на стол
         this.state.tableCards.push({ card, playerId });
+        if (isTrickLead && card.rank !== 'J' && !this.state.startedSuits.includes(card.suit)) {
+            this.state.startedSuits.push(card.suit);
+        }
 
         // Если все игроки сделали ходы, разрешаем раунд
         if (this.state.tableCards.length === this.state.players.length) {
@@ -565,6 +594,41 @@ export class BelkaGame {
         return summary;
     }
 
+    private areTeammates(playerAId: number, playerBId: number): boolean {
+        const inTeam1 = this.state.teams.team1.players.some(player => player.id === playerAId) ===
+            this.state.teams.team1.players.some(player => player.id === playerBId);
+        return inTeam1;
+    }
+
+    private isLeadPlayerCurrentlyWinning(): boolean {
+        const lead = this.state.tableCards[0];
+        if (!lead) return false;
+
+        let winningCard = lead;
+        for (const tableCard of this.state.tableCards.slice(1)) {
+            if (this.beatsCard(tableCard.card, winningCard.card, lead.card)) {
+                winningCard = tableCard;
+            }
+        }
+        return winningCard.playerId === lead.playerId;
+    }
+
+    private beatsCard(candidate: Card, currentWinner: Card, lead: Card): boolean {
+        const candidateIsJack = candidate.rank === 'J';
+        const winnerIsJack = currentWinner.rank === 'J';
+        const candidateIsTrump = candidateIsJack || candidate.suit === this.state.trump;
+        const winnerIsTrump = winnerIsJack || currentWinner.suit === this.state.trump;
+
+        if (candidateIsJack && !winnerIsJack) return true;
+        if (!candidateIsJack && winnerIsJack) return false;
+        if (candidateIsJack && winnerIsJack) {
+            return this.getJackValue(candidate.suit) > this.getJackValue(currentWinner.suit);
+        }
+        if (candidateIsTrump && !winnerIsTrump) return true;
+        if (!candidateIsTrump && winnerIsTrump) return false;
+        return candidate.suit === lead.suit && this.getCardValue(candidate) > this.getCardValue(currentWinner);
+    }
+
     // Вспомогательный метод для определения победителя раунда
     private determineRoundWinner(): number {
         if (this.state.tableCards.length !== 4) {
@@ -718,6 +782,7 @@ export class BelkaGame {
         this.state.teams.team1.tricks = 0;
         this.state.teams.team2.score = 0;
         this.state.teams.team2.tricks = 0;
+        this.state.startedSuits = [];
 
         // Сбрасываем индивидуальные взятки игроков для нового раунда
         for (const player of this.state.players) {
@@ -876,6 +941,7 @@ export class BelkaGame {
             this.state.teams.team1.tricks = 0;
             this.state.teams.team2.score = 0;
             this.state.teams.team2.tricks = 0;
+            this.state.startedSuits = [];
 
             // Сбрасываем индивидуальные взятки игроков для переигровки
             for (const player of this.state.players) {
@@ -915,7 +981,13 @@ export class BelkaGame {
                     break;
                 }
             }
-            
+
+            // Козырь для переигровки определён — сортируем новые руки сразу,
+            // не дожидаясь следующего обычного раунда.
+            for (const player of this.state.players) {
+                this.sortPlayerHand(player.cards);
+            }
+
             // Увеличиваем номер раунда ПОСЛЕ всех настроек
             this.state.currentRound++;
             
@@ -1237,6 +1309,7 @@ export class BelkaGame {
             ...data,
             lastTrick: data.lastTrick || null,
             matchHistory: data.matchHistory || { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 },
+            startedSuits: data.startedSuits || [],
             playerSuitMap,
             endVotes,
             giveUpVotes
