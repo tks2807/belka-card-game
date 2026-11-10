@@ -508,7 +508,7 @@ export class StatsService {
                     global_stats g
                 JOIN 
                     players p ON g.player_id = p.player_id
-                WHERE g.games_played > 0
+                WHERE g.games_played > 0 AND COALESCE(g.season_games_played, 0) > 0
                 ORDER BY 
                     g.games_played DESC, g.games_won DESC, g.total_score DESC
             `);
@@ -609,7 +609,7 @@ export class StatsService {
                 JOIN 
                     players p ON c.player_id = p.player_id
                 WHERE 
-                    c.chat_id = $1 AND c.games_played > 0
+                    c.chat_id = $1 AND c.games_played > 0 AND COALESCE(c.season_games_played, 0) > 0
                 ORDER BY 
                     c.games_played DESC, c.games_won DESC, c.total_score DESC
             `, [chatId]);
