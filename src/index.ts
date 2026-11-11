@@ -1164,7 +1164,6 @@ async function sendLeaderboardAllImproved(ctx: any, offset = 0, isEdit = false) 
     if (s.isQualified) {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
         `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
-        `${s.rank.icon} Ранг: ${s.rank.name}\n` +
         `🃏 Игры (сезон): ${seasonGamesPlayed} | 🏆 Победы: ${seasonGamesWon}\n` +
         `🎖 Голые победы: ${seasonGolayaCount} | 🥚 Яйца: ${seasonEggsCount}\n\n`;
     } else {
@@ -1215,12 +1214,13 @@ async function sendLeaderboardChatImproved(ctx: any, chatId: number, offset = 0,
     if (s.isQualified) {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
         `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
-        `${s.rank.icon} Ранг: ${s.rank.name}\n` +
+        `${s.rank.icon} Ранг: ${s.rank.name} · ${(s as any).rankPoints}/100 RP\n` +
         `🃏 Игры (сезон): ${seasonGamesPlayedC} | 🏆 Победы: ${seasonGamesWonC}\n` +
         `🎖 Голые победы: ${seasonGolayaCountC} | 🥚 Яйца: ${seasonEggsCountC}\n\n`;
     } else {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
         `📊 ELO: ${s.eloRating} (${seasonGamesPlayedC} игр в сезоне)\n` +
+        `${s.rank.icon} Ранг: ${s.rank.name} · ${(s as any).rankPoints}/100 RP\n` +
         `🃏 Игры (сезон): ${seasonGamesPlayedC} | 🏆 Победы: ${seasonGamesWonC}\n` +
         `🎖 Голые победы: ${seasonGolayaCountC} | 🥚 Яйца: ${seasonEggsCountC}\n\n`;
     }
@@ -1736,15 +1736,15 @@ bot.command('ranks', async (ctx) => {
     const allRanks = statsService.getAllRanks();
     
     let message = '🏆 Система рангов белки 🏆\n\n';
-    message += 'Ранги основаны на ELO рейтинге в казахском стиле:\n\n';
+    message += 'Ранги основаны на сезонных RP в казахском стиле. В каждом ранге 0–100 RP:\n\n';
     
     allRanks.forEach((rank) => {
         message += `${rank.icon} **${rank.name}**\n`;
-        message += `📊 ELO: ${rank.min} - ${rank.max}\n`;
+        message += `📊 Ранг ${rank.tier + 1} из ${allRanks.length}\n`;
         message += `📝 ${rank.description}\n\n`;
     });
     
-    message += '💡 *Совет*: Играйте больше игр и побеждайте сильных противников для повышения рейтинга!';
+    message += '💡 *Совет*: Побеждайте, чтобы получать RP; на высоких рангах потери за поражение больше.';
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
 });
@@ -1804,15 +1804,16 @@ bot.command('myrank', async (ctx) => {
     
     const statsService = new StatsService();
     
-    // Показываем только чат ELO
     const playerELO = await statsService.getPlayerChatELO(userId, chatId);
+    const playerRank = await statsService.getPlayerChatRank(userId, chatId);
     const features = await statsService.getChatFeatures(userId, chatId);
-    const rank = statsService.getRankByELO(playerELO);
-    const progress = statsService.getRankProgress(playerELO);
+    const rank = statsService.getRankByRP(playerRank.tier);
+    const progress = statsService.getRankProgress(playerRank.tier, playerRank.points);
     
     let message = `🎖 *Ваш ранг в этом чате, ${username}* 🎖\n\n`;
     message += `${rank.icon} **${rank.name}**\n`;
-    message += `📊 ELO: ${playerELO}\n`;
+    message += `⚔️ ELO: ${playerELO}\n`;
+    message += `📊 ${playerRank.points}/100 RP\n`;
     message += `🔥 Победная серия: ${features.winStreak} | Рекорд: ${features.bestWinStreak}\n`;
     if (features.activeTitle) message += `🏷 Титул: ${features.activeTitle}\n`;
     message += `📝 ${rank.description}\n\n`;
@@ -1821,12 +1822,12 @@ bot.command('myrank', async (ctx) => {
         const progressBar = '▓'.repeat(Math.floor(progress.progress / 10)) + '░'.repeat(10 - Math.floor(progress.progress / 10));
         message += `📈 *Прогресс до ${progress.next.name}:*\n`;
         message += `${progressBar} ${progress.progress}%\n`;
-        message += `🎯 Нужно еще: ${progress.eloToNext} ELO\n\n`;
+        message += `🎯 Нужно еще: ${progress.rpToNext} RP\n\n`;
     } else {
         message += `🌟 *Поздравляем!* Вы достигли максимального ранга!\n\n`;
     }
-    
-    message += '💪 Продолжайте играть в этом чате для повышения рейтинга!';
+
+    message += '💪 Побеждайте, чтобы повышать ранг!';
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
 });

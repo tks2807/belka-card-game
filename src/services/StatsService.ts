@@ -22,64 +22,72 @@ export class StatsService {
         return gamesPlayed < 10 ? 24 : 18;
     }
 
-    // Система рангов в казахском стиле
-    private readonly ELO_RANKS = {
-        SART: { min: 0, max: 799, name: "Сарт", nameKz: "Сарт", icon: "🏪", description: "Торговец, начинающий путь" },
-        ZHAUYNGER: { min: 800, max: 999, name: "Жауынгер", nameKz: "Жауынгер", icon: "🗡️", description: "Молодой воин" },
-        BATYR: { min: 1000, max: 1199, name: "Батыр", nameKz: "Батыр", icon: "⚔️", description: "Храбрый воин" },
-        MYNBASY: { min: 1200, max: 1399, name: "Мыңбасы", nameKz: "Мыңбасы", icon: "🛡️", description: "Тысячник, командир тысячи воинов" },
-        TUMENBASY: { min: 1400, max: 1599, name: "Түменбасы", nameKz: "Түменбасы", icon: "🏹", description: "Темник, командир десяти тысяч" },
-        AKSAKAT: { min: 1600, max: 1799, name: "Ақсақал", nameKz: "Ақсақал", icon: "👴", description: "Мудрый старейшина" },
-        BIY: { min: 1800, max: 1999, name: "Би", nameKz: "Би", icon: "⚖️", description: "Справедливый судья" },
-        SULTAN: { min: 2000, max: 2199, name: "Сұлтан", nameKz: "Сұлтан", icon: "👑", description: "Благородный правитель" },
-        BEGLERBEG: { min: 2200, max: 2399, name: "Беклербек", nameKz: "Беклербек", icon: "🏛️", description: "Наместник султана, правитель области" },
-        KHAN: { min: 2400, max: 2599, name: "Хан", nameKz: "Хан", icon: "🌟", description: "Великий хан" },
-        LEGEND: { min: 2600, max: 9999, name: "Аңыз", nameKz: "Аңыз", icon: "💫", description: "Легенда белки" }
-    };
+    // Visible progression ranks. ELO remains a hidden skill rating for match balance.
+    private readonly RP_RANKS = [
+        { tier: 0, name: "Сарт", nameKz: "Сарт", icon: "🏪", description: "Торговец, начинающий путь" },
+        { tier: 1, name: "Жауынгер", nameKz: "Жауынгер", icon: "🗡️", description: "Молодой воин" },
+        { tier: 2, name: "Батыр", nameKz: "Батыр", icon: "⚔️", description: "Храбрый воин" },
+        { tier: 3, name: "Мыңбасы", nameKz: "Мыңбасы", icon: "🛡️", description: "Тысячник, командир тысячи воинов" },
+        { tier: 4, name: "Түменбасы", nameKz: "Түменбасы", icon: "🏹", description: "Темник, командир десяти тысяч" },
+        { tier: 5, name: "Ақсақал", nameKz: "Ақсақал", icon: "👴", description: "Мудрый старейшина" },
+        { tier: 6, name: "Би", nameKz: "Би", icon: "⚖️", description: "Справедливый судья" },
+        { tier: 7, name: "Сұлтан", nameKz: "Сұлтан", icon: "👑", description: "Благородный правитель" },
+        { tier: 8, name: "Беклербек", nameKz: "Беклербек", icon: "🏛️", description: "Наместник султана, правитель области" },
+        { tier: 9, name: "Хан", nameKz: "Хан", icon: "🌟", description: "Великий хан" },
+        { tier: 10, name: "Аңыз", nameKz: "Аңыз", icon: "💫", description: "Легенда белки" }
+    ];
 
-    // Определение ранга по ELO
-    public getRankByELO(elo: number): { name: string, nameKz: string, icon: string, description: string, min: number, max: number } {
-        for (const rank of Object.values(this.ELO_RANKS)) {
-            if (elo >= rank.min && elo <= rank.max) {
-                return rank;
-            }
-        }
-        // Если ЭЛО выше максимального, возвращаем высший ранг
-        return this.ELO_RANKS.LEGEND;
+    public getRankByRP(tier: number) {
+        return this.RP_RANKS[Math.max(0, Math.min(this.RP_RANKS.length - 1, tier))];
     }
 
-    // Получение прогресса до следующего ранга
-    public getRankProgress(elo: number): { current: any, next: any | null, progress: number, eloToNext: number } {
-        const currentRank = this.getRankByELO(elo);
-        const ranks = Object.values(this.ELO_RANKS);
-        const currentIndex = ranks.findIndex(rank => rank.min === currentRank.min);
-        const nextRank = currentIndex < ranks.length - 1 ? ranks[currentIndex + 1] : null;
-        
-        if (!nextRank) {
-            return {
-                current: currentRank,
-                next: null,
-                progress: 100,
-                eloToNext: 0
-            };
-        }
-
-        const eloInCurrentRank = elo - currentRank.min;
-        const rankRange = currentRank.max - currentRank.min + 1;
-        const progress = Math.min(100, Math.round((eloInCurrentRank / rankRange) * 100));
-        const eloToNext = nextRank.min - elo;
-
-        return {
-            current: currentRank,
-            next: nextRank,
-            progress,
-            eloToNext: Math.max(0, eloToNext)
-        };
+    public getRankProgress(tier: number, rankPoints: number) {
+        const current = this.getRankByRP(tier);
+        const next = tier < this.RP_RANKS.length - 1 ? this.getRankByRP(tier + 1) : null;
+        return { current, next, progress: Math.max(0, Math.min(100, rankPoints)), rpToNext: next ? 100 - rankPoints : 0 };
     }
 
-    // Получение списка всех рангов для отображения
-    public getAllRanks(): Array<{ name: string, nameKz: string, icon: string, description: string, min: number, max: number }> {
-        return Object.values(this.ELO_RANKS);
+    public getAllRanks() {
+        return this.RP_RANKS;
+    }
+
+    private getRankPointDelta(tier: number, won: boolean): number {
+        if (tier <= 2) return won ? 25 : -15;
+        if (tier <= 5) return won ? 22 : -18;
+        if (tier <= 8) return won ? 20 : -20;
+        return won ? 18 : -22;
+    }
+
+    private applyRankPoints(tier: number, points: number, won: boolean) {
+        const delta = this.getRankPointDelta(tier, won);
+        let nextTier = tier;
+        let nextPoints = points + delta;
+        const maxTier = this.RP_RANKS.length - 1;
+
+        while (nextPoints >= 100 && nextTier < maxTier) {
+            nextTier += 1;
+            nextPoints -= 100;
+        }
+        while (nextPoints < 0 && nextTier > 0) {
+            nextTier -= 1;
+            nextPoints += 100;
+        }
+        if (nextTier === maxTier) nextPoints = Math.min(nextPoints, 100);
+        if (nextTier === 0) nextPoints = Math.max(nextPoints, 0);
+        return { tier: nextTier, points: nextPoints, delta };
+    }
+
+    public async getPlayerChatRank(playerId: number, chatId: number): Promise<{ tier: number; points: number }> {
+        const client = await pool.connect();
+        try {
+            const result = await client.query(
+                'SELECT rank_tier, rank_points FROM chat_stats WHERE player_id = $1 AND chat_id = $2',
+                [playerId, chatId]
+            );
+            return result.rows.length ? { tier: Number(result.rows[0].rank_tier), points: Number(result.rows[0].rank_points) } : { tier: 1, points: 0 };
+        } finally {
+            client.release();
+        }
     }
 
     // Расчет ожидаемого результата для ELO системы
@@ -136,7 +144,7 @@ export class StatsService {
         losers: Array<{ id: number; username: string }>,
         isGolden: boolean,
         chatId: number
-    ): Promise<Map<number, { oldElo: number; newElo: number; delta: number; gamesPlayed: number }>> {
+    ): Promise<Map<number, { oldElo: number; newElo: number; delta: number; gamesPlayed: number; oldRankTier: number; oldRankPoints: number; newRankTier: number; newRankPoints: number; rankPointDelta: number }>> {
         if (winners.length !== 2 || losers.length !== 2) {
             throw new Error('Team ELO requires exactly two players per team');
         }
@@ -161,7 +169,7 @@ export class StatsService {
                 [playerIds]
             );
             const chatRows = await client.query(
-                'SELECT player_id, elo_rating, COALESCE(season_games_played, 0) AS season_games_played FROM chat_stats WHERE chat_id = $1 AND player_id = ANY($2::bigint[]) FOR UPDATE',
+                'SELECT player_id, elo_rating, COALESCE(season_games_played, 0) AS season_games_played, rank_tier, rank_points FROM chat_stats WHERE chat_id = $1 AND player_id = ANY($2::bigint[]) FOR UPDATE',
                 [chatId, playerIds]
             );
 
@@ -171,6 +179,9 @@ export class StatsService {
             ]));
             const global = toRatings(globalRows.rows);
             const chat = toRatings(chatRows.rows);
+            const chatRanks = new Map(chatRows.rows.map(row => [
+                Number(row.player_id), { tier: Number(row.rank_tier), points: Number(row.rank_points) }
+            ]));
 
             const calculateDeltas = (ratings: Map<number, { elo: number; games: number }>) => {
                 const winnerRating = (ratings.get(winners[0].id)!.elo + ratings.get(winners[1].id)!.elo) / 2;
@@ -185,22 +196,32 @@ export class StatsService {
 
             const globalDelta = calculateDeltas(global);
             const chatDelta = calculateDeltas(chat);
-            const changes = new Map<number, { oldElo: number; newElo: number; delta: number; gamesPlayed: number }>();
+            const changes = new Map<number, { oldElo: number; newElo: number; delta: number; gamesPlayed: number; oldRankTier: number; oldRankPoints: number; newRankTier: number; newRankPoints: number; rankPointDelta: number }>();
 
             for (const player of players) {
                 const won = winners.some(winner => winner.id === player.id);
                 const globalOld = global.get(player.id)!;
                 const chatOld = chat.get(player.id)!;
+                const rankOld = chatRanks.get(player.id)!;
                 const nextGlobal = Math.min(Math.max(globalOld.elo + (won ? globalDelta.winnerDelta : globalDelta.loserDelta), 500), 9999);
                 const nextChat = Math.min(Math.max(chatOld.elo + (won ? chatDelta.winnerDelta : chatDelta.loserDelta), 500), 9999);
+                const nextRank = this.applyRankPoints(rankOld.tier, rankOld.points, won);
 
                 await client.query('UPDATE global_stats SET elo_rating = $2 WHERE player_id = $1', [player.id, nextGlobal]);
-                await client.query('UPDATE chat_stats SET elo_rating = $3 WHERE chat_id = $1 AND player_id = $2', [chatId, player.id, nextChat]);
+                await client.query(
+                    'UPDATE chat_stats SET elo_rating = $3, rank_tier = $4, rank_points = $5 WHERE chat_id = $1 AND player_id = $2',
+                    [chatId, player.id, nextChat, nextRank.tier, nextRank.points]
+                );
                 changes.set(player.id, {
                     oldElo: chatOld.elo,
                     newElo: nextChat,
                     delta: won ? chatDelta.winnerDelta : chatDelta.loserDelta,
-                    gamesPlayed: chatOld.games + 1
+                    gamesPlayed: chatOld.games + 1,
+                    oldRankTier: rankOld.tier,
+                    oldRankPoints: rankOld.points,
+                    newRankTier: nextRank.tier,
+                    newRankPoints: nextRank.points,
+                    rankPointDelta: nextRank.delta
                 });
             }
 
@@ -527,7 +548,8 @@ export class StatsService {
                 const complexRating = this.calculateComplexRating(stats);
                 const isQualified = row.games_played >= this.RATING_CONSTANTS.MIN_GAMES_FOR_RATING;
                 const eloRating = row.elo_rating || this.RATING_CONSTANTS.BASE_ELO;
-                const rank = this.getRankByELO(eloRating);
+                // RP ranks are per chat, so the all-chat leaderboard has no visible rank.
+                const rank = this.getRankByRP(1);
 
                 return [
                     row.player_id,
@@ -585,7 +607,7 @@ export class StatsService {
     }
 
     // Получение улучшенного лидерборда для чата
-    public async getLeaderboardChatImproved(chatId: number, offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any, seasonGamesPlayed: number, seasonGamesWon: number }]>> {
+    public async getLeaderboardChatImproved(chatId: number, offset = 0, limit = 5): Promise<Array<[number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any, rankPoints: number, seasonGamesPlayed: number, seasonGamesWon: number }]>> {
         const client = await pool.connect();
         try {
             const result = await client.query(`
@@ -599,6 +621,8 @@ export class StatsService {
                     c.eggs_count,
                     c.golaya_count,
                     c.elo_rating,
+                    c.rank_tier,
+                    c.rank_points,
                     COALESCE(c.season_games_played, 0) as season_games_played,
                     COALESCE(c.season_games_won, 0) as season_games_won,
                     COALESCE(c.season_golaya_count, 0) as season_golaya_count,
@@ -628,7 +652,7 @@ export class StatsService {
                 const complexRating = this.calculateComplexRating(stats);
                 const isQualified = row.games_played >= this.RATING_CONSTANTS.MIN_GAMES_FOR_RATING;
                 const eloRating = row.elo_rating || this.RATING_CONSTANTS.BASE_ELO;
-                const rank = this.getRankByELO(eloRating);
+                const rank = this.getRankByRP(Number(row.rank_tier));
 
                 return [
                     row.player_id,
@@ -645,12 +669,13 @@ export class StatsService {
                         isQualified: isQualified,
                         eloRating: eloRating,
                         rank: rank,
+                        rankPoints: Number(row.rank_points),
                         seasonGamesPlayed: Number(row.season_games_played || 0),
                         seasonGamesWon: Number(row.season_games_won || 0),
                         seasonGolayaCount: Number(row.season_golaya_count || 0),
                         seasonEggsCount: Number(row.season_eggs_count || 0)
                     }
-                ] as [number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any, seasonGamesPlayed: number, seasonGamesWon: number, seasonGolayaCount: number, seasonEggsCount: number }];
+                ] as [number, PlayerStats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any, rankPoints: number, seasonGamesPlayed: number, seasonGamesWon: number, seasonGolayaCount: number, seasonEggsCount: number }];
             });
 
             // Сортируем по ELO рейтингу
@@ -988,7 +1013,7 @@ export class StatsService {
 
             // Сбрасываем ELO всех игроков до 1000
             await client.query('UPDATE global_stats SET elo_rating = 1000');
-            await client.query('UPDATE chat_stats SET elo_rating = 1000');
+            await client.query('UPDATE chat_stats SET elo_rating = 1000, rank_tier = 1, rank_points = 0');
 
             // Сбрасываем сезонные колонки
             await client.query(`

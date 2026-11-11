@@ -1199,8 +1199,8 @@ export class BelkaGame {
         const losingTeamData = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
 
         // ELO change results for summary (#12)
-        const winnerEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number }> = [];
-        const loserEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number }> = [];
+        const winnerEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number; oldRankTier: number; oldRankPoints: number; newRankTier: number; newRankPoints: number; rankPointDelta: number }> = [];
+        const loserEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number; oldRankTier: number; oldRankPoints: number; newRankTier: number; newRankPoints: number; rankPointDelta: number }> = [];
 
         try {
             // Рейтинг считается один раз для обеих пар из одного снимка до
@@ -1240,21 +1240,21 @@ export class BelkaGame {
             return '';
         }
 
-        // Формируем ELO-сводку (#12)
-        const rankName = (elo: number) => {
-            const rank = this.statsService.getRankByELO(elo);
+        // Показываем видимый RP-ранг; ELO остаётся внутренним рейтингом подбора.
+        const rankName = (tier: number) => {
+            const rank = this.statsService.getRankByRP(tier);
             return `${rank.icon} ${rank.name}`;
         };
-        let eloSummary = '\n\n📊 Изменения рейтинга:\n';
+        let eloSummary = '\n\n📊 Изменения ранга:\n';
         eloSummary += '🏆 Победители:\n';
         for (const c of winnerEloChanges) {
-            const sign = c.delta >= 0 ? '+' : '';
-            eloSummary += `• @${c.username}: ${c.oldElo} → ${c.newElo} (${sign}${c.delta}) ${rankName(c.newElo)}\n`;
+            const sign = c.rankPointDelta >= 0 ? '+' : '';
+            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta})\n`;
         }
         eloSummary += '💀 Проигравшие:\n';
         for (const c of loserEloChanges) {
-            const sign = c.delta >= 0 ? '+' : '';
-            eloSummary += `• @${c.username}: ${c.oldElo} → ${c.newElo} (${sign}${c.delta}) ${rankName(c.newElo)}\n`;
+            const sign = c.rankPointDelta >= 0 ? '+' : '';
+            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta})\n`;
         }
         return eloSummary + this.getMatchHistorySummary(winningTeam, isGolden);
     }

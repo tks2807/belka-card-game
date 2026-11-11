@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS chat_stats (
   eggs_count INTEGER DEFAULT 0,
   golaya_count INTEGER DEFAULT 0,
   elo_rating INTEGER DEFAULT 1000,
+  rank_tier SMALLINT NOT NULL DEFAULT 1,
+  rank_points SMALLINT NOT NULL DEFAULT 0,
   UNIQUE(chat_id, player_id)
 );
 
