@@ -5,6 +5,7 @@
   "scripts": {
     "start": "ts-node src/index.ts",
     "build": "tsc && npm run copy-files",
+    "test:i18n": "npm run build && node --test scripts/i18n.test.cjs",
     "copy-files": "copyfiles -u 1 \"src/**/*.sql\" \"src/**/*.json\" dist",
     "dev": "nodemon src/index.ts"
   },

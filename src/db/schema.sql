@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS player_chat_features (
   PRIMARY KEY (chat_id, player_id)
 );
 
+-- Язык сообщений бота для каждого группового чата
+CREATE TABLE IF NOT EXISTS chat_settings (
+  chat_id BIGINT PRIMARY KEY,
+  locale VARCHAR(2) NOT NULL DEFAULT 'ru' CHECK (locale IN ('ru', 'kk'))
+);
+
 -- Create history table for global stats
 CREATE TABLE IF NOT EXISTS global_stats_history (
   id SERIAL PRIMARY KEY,

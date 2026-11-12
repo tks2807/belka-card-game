@@ -1,3 +1,4 @@
+import { normalizeTitle } from '../i18n/titles';
 import { PlayerStats } from '../types/game.types';
 import pool from '../db';
 
@@ -368,17 +369,18 @@ export class StatsService {
                   [chatId, playerId]
               );
               const total = totals.rows[0];
-              const titles = Array.isArray(feature.unlocked_titles) ? [...feature.unlocked_titles] : [];
-              const unlock = (title: string, condition: boolean) => { if (condition && !titles.includes(title)) titles.push(title); };
-              unlock('🎯 Победитель', Number(total.season_games_won) >= 1);
-              unlock('🔥 На серии', bestStreak >= 3);
-              unlock('⚡ Неостановим', bestStreak >= 5);
-              unlock('🎯 Голая рука', Number(total.season_golaya_count) >= 1);
-              unlock('👑 Мастер голой', Number(total.season_golaya_count) >= 3);
-              unlock('🃏 Ветеран', Number(total.season_games_played) >= 25);
-              unlock('🏆 Чемпион', Number(total.season_games_won) >= 25);
-              unlock('💯 Сотник', Number(total.season_games_played) >= 100);
-              const activeTitle = feature.active_title && titles.includes(feature.active_title) ? feature.active_title : (titles[titles.length - 1] || null);
+              const titles = Array.isArray(feature.unlocked_titles) ? [...new Set(feature.unlocked_titles.map((title: string) => normalizeTitle(title)))] : [];
+              const unlock = (title: string, condition: boolean) => { title = normalizeTitle(title); if (condition && !titles.includes(title)) titles.push(title); };
+              unlock('winner', Number(total.season_games_won) >= 1);
+              unlock('on_streak', bestStreak >= 3);
+              unlock('unstoppable', bestStreak >= 5);
+              unlock('golden_hand', Number(total.season_golaya_count) >= 1);
+              unlock('golden_master', Number(total.season_golaya_count) >= 3);
+              unlock('veteran', Number(total.season_games_played) >= 25);
+              unlock('champion', Number(total.season_games_won) >= 25);
+              unlock('centurion', Number(total.season_games_played) >= 100);
+              const previousTitle = feature.active_title ? normalizeTitle(feature.active_title) : null;
+              const activeTitle = previousTitle && titles.includes(previousTitle) ? previousTitle : (titles[titles.length - 1] || null);
               await client.query(
                   `INSERT INTO player_chat_features (chat_id, player_id, win_streak, best_win_streak, active_title, unlocked_titles)
                    VALUES ($1, $2, $3, $4, $5, $6::jsonb)
@@ -405,10 +407,11 @@ export class StatsService {
             [chatId, playerId]
         );
         const row = result.rows[0];
-        return row ? { winStreak: Number(row.win_streak), bestWinStreak: Number(row.best_win_streak), activeTitle: row.active_title, titles: Array.isArray(row.unlocked_titles) ? row.unlocked_titles : [] } : { winStreak: 0, bestWinStreak: 0, activeTitle: null, titles: [] };
+        return row ? { winStreak: Number(row.win_streak), bestWinStreak: Number(row.best_win_streak), activeTitle: row.active_title ? normalizeTitle(row.active_title) : null, titles: Array.isArray(row.unlocked_titles) ? [...new Set<string>(row.unlocked_titles.map((title: string) => normalizeTitle(title)))] : [] } : { winStreak: 0, bestWinStreak: 0, activeTitle: null, titles: [] };
     }
 
     public async setActiveTitle(playerId: number, chatId: number, title: string): Promise<boolean> {
+        title = normalizeTitle(title);
         const features = await this.getChatFeatures(playerId, chatId);
         if (!features.titles.includes(title)) return false;
         await pool.query('UPDATE player_chat_features SET active_title = $3 WHERE chat_id = $1 AND player_id = $2', [chatId, playerId, title]);

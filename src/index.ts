@@ -5,12 +5,17 @@ import { BelkaGame } from './game/BelkaGame';
 import { Player, CardSuit, Card, TableCard, GameState, CardRank } from './types/game.types';
 import { StatsService } from './services/StatsService';
 import { chatManager } from './services/ChatManager';
+import { LocaleService } from './services/LocaleService';
+import { Locale, t, translate, localize, withLocale, currentLocale, metadataText, seasonName } from './i18n';
+import { titleName, normalizeTitle } from './i18n/titles';
 import setupDatabase from './db/setupDatabase';
 import pool from './db';
 import * as https from 'https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+
+const localeService = new LocaleService();
 
 // Загружаем переменные окружения
 dotenv.config();
@@ -64,7 +69,7 @@ const httpOptions = {
 };
 
 // Инициализируем базу данных перед запуском бота
-setupDatabase()
+const databaseReady = setupDatabase()
   .then(() => {
     console.log('Database initialized successfully');
   })
@@ -87,6 +92,15 @@ const bot = new Telegraf(process.env['BOT_TOKEN'] || '', {
   debug: true,
   // Добавляем обработку супергрупп
   handleSupergroups: true
+});
+
+// All handlers and helpers inherit the locale of the source chat, not the user.
+bot.use(async (ctx, next) => {
+    const sourceChatId = ctx.chat?.id ?? playerCardsInPrivateChat.get(ctx.from?.id ?? 0)?.gameId;
+    const chatId = sourceChatId === undefined ? undefined : chatManager.getActualChatId(sourceChatId);
+    const locale = chatId === undefined ? 'ru' : await localeService.get(chatId);
+    if (chatId !== undefined) games.get(chatId)?.setLocale(locale);
+    return withLocale(locale, () => next());
 });
 
 // Перехватываем методы отправки сообщений для проверки ID чата
@@ -122,6 +136,7 @@ bot.telegram.sendMessage = async (chatId: number | string, text: string, extra?:
       // Сохраняем новое сопоставление
       if (typeof oldChatId === 'number') {
         chatManager.addMapping(oldChatId, newChatId);
+        await localeService.migrate(oldChatId, newChatId);
       }
       
       // Пробуем отправить сообщение в новый чат
@@ -166,6 +181,7 @@ bot.telegram.sendSticker = async (chatId: number | string, sticker: string, extr
       // Сохраняем новое сопоставление
       if (typeof oldChatId === 'number') {
         chatManager.addMapping(oldChatId, newChatId);
+        await localeService.migrate(oldChatId, newChatId);
       }
       
       // Пробуем отправить стикер в новый чат
@@ -178,7 +194,7 @@ bot.telegram.sendSticker = async (chatId: number | string, sticker: string, extr
 };
 
 // Добавляем обработчик ошибок для бота
-bot.catch((err, ctx) => {
+bot.catch(async (err, ctx) => {
   console.error('Bot error:', err);
   
   // Если пользователь заблокировал бота, логируем и не прерываем работу
@@ -186,7 +202,7 @@ bot.catch((err, ctx) => {
       typeof err.description === 'string' && err.description.includes('bot was blocked by the user')) {
     
     // Извлекаем ID пользователя, если возможно
-    let userId = "неизвестный";
+    let userId = localize('log.unknownUser');
     if (err && typeof err === 'object' && 'on' in err && 
         typeof err.on === 'object' && err.on !== null && 'payload' in err.on && 
         typeof err.on.payload === 'object' && err.on.payload !== null && 'chat_id' in err.on.payload) {
@@ -210,6 +226,7 @@ bot.catch((err, ctx) => {
       if (oldChatId) {
         // Сохраняем сопоставление в ChatManager
         chatManager.addMapping(oldChatId, newChatId);
+        await localeService.migrate(oldChatId, newChatId);
         
         // Получаем игру из старого чата
         const game = games.get(oldChatId);
@@ -241,7 +258,7 @@ bot.catch((err, ctx) => {
           try {
             bot.telegram.sendMessage(
               newChatId, 
-              'Чат обновлен до супергруппы. Игра автоматически перенесена в новый чат.'
+              localize('chat.migrated')
             );
             console.log('[MIGRATION] Игра успешно перенесена в новый чат');
           } catch (sendError) {
@@ -303,7 +320,7 @@ async function loadSavedGames(): Promise<void> {
                 await deleteGameState(chatId);
                 continue;
             }
-            const game = new BelkaGame(chatId);
+            const game = new BelkaGame(chatId, await localeService.get(chatId));
             game.restoreFromSerializedState(data);
             games.set(chatId, game);
             console.log(`[PERSIST] Restored game for chat ${chatId}`);
@@ -503,30 +520,39 @@ for (const key in cardStickers) {
 }
 
 // Включаем inline режим
-bot.telegram.setMyCommands([
-    { command: 'start', description: 'Начать работу с ботом' },
-    { command: 'help', description: 'Показать справку' },
-    { command: 'join', description: 'Присоединиться к игре' },
-    { command: 'startbelka', description: 'Начать игру (Белка - до 12 глаз)' },
-    { command: 'startwalka', description: 'Начать игру (Шалқа - до 6 глаз)' },
-    { command: 'rematch', description: 'Реванш теми же четырьмя игроками' },
-    { command: 'lasttrick', description: 'Показать последнюю сыгранную взятку' },
+function commandsFor(locale: Locale) {
+  return [
+    { command: 'start', description: translate(locale, 'menu.start') },
+    { command: 'help', description: translate(locale, 'menu.help') },
+    { command: 'join', description: translate(locale, 'menu.join') },
+    { command: 'startbelka', description: translate(locale, 'menu.startbelka') },
+    { command: 'startwalka', description: translate(locale, 'menu.startwalka') },
+    { command: 'rematch', description: translate(locale, 'menu.rematch') },
+    { command: 'lasttrick', description: translate(locale, 'menu.lasttrick') },
     //{ command: 'time', description: 'Включить автоматические ходы (30 сек)' },
-    { command: 'swap', description: 'Обмен местами: первый пишет /swap, второй тоже /swap — меняются' },
-    { command: 'swapcancel', description: 'Отменить ожидание обмена (может только инициатор)' },
-    { command: 'ratingall', description: 'Глобальный рейтинг (сезон)' },
-    { command: 'ratingchat', description: 'Рейтинг этого чата (сезон)' },
-    { command: 'alltime', description: 'Всё-время статистика (без ELO)' },
-    { command: 'history', description: 'История чемпионов по сезонам' },
-    { command: 'endgame', description: 'Проголосовать за завершение игры' },
-    { command: 'giveup', description: 'Сдаться (нужно подтверждение напарника)' },
-    { command: 'clearbot', description: 'Сбросить игру' },
-    { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
-    { command: 'ranks', description: 'Показать систему рангов' },
-    { command: 'myrank', description: 'Мой ранг и активный титул' },
-    { command: 'titles', description: 'Мои открытые титулы' },
-    { command: 'title', description: 'Выбрать активный титул' }
-]).then(() => {
+    { command: 'swap', description: translate(locale, 'menu.swap') },
+    { command: 'swapcancel', description: translate(locale, 'menu.swapcancel') },
+    { command: 'ratingall', description: translate(locale, 'menu.ratingall') },
+    { command: 'ratingchat', description: translate(locale, 'menu.ratingchat') },
+    { command: 'alltime', description: translate(locale, 'menu.alltime') },
+    { command: 'history', description: translate(locale, 'menu.history') },
+    { command: 'endgame', description: translate(locale, 'menu.endgame') },
+    { command: 'giveup', description: translate(locale, 'menu.giveup') },
+    { command: 'clearbot', description: translate(locale, 'menu.clearbot') },
+    { command: 'warmuty', description: translate(locale, 'menu.warmuty') },
+    { command: 'ranks', description: translate(locale, 'menu.ranks') },
+    { command: 'myrank', description: translate(locale, 'menu.myrank') },
+    { command: 'language', description: translate(locale, 'menu.language') },
+    { command: 'state', description: translate(locale, 'menu.state') },
+    { command: 'rating', description: translate(locale, 'menu.rating') },
+    { command: 'titles', description: translate(locale, 'menu.titles') },
+    { command: 'title', description: translate(locale, 'menu.title') }
+];
+}
+async function updateChatMenu(chatId: number, locale: Locale): Promise<void> {
+    await bot.telegram.setMyCommands(commandsFor(locale), { scope: { type: 'chat', chat_id: chatId } });
+}
+bot.telegram.setMyCommands(commandsFor('ru')).then(() => {
     // Включаем инлайн-режим
     return bot.telegram.setWebhook(''); // Сбрасываем вебхук для long polling
 }).then(() => {
@@ -644,7 +670,7 @@ async function safeSendMessage(ctx: any, text: string, extra?: any) {
         'description' in error && 
         typeof error.description === 'string' && 
         error.description.includes('bot was blocked by the user')) {
-      let userId = "неизвестный";
+      let userId = localize('log.unknownUser');
       if (error.on && typeof error.on === 'object' && 'payload' in error.on && 
           typeof error.on.payload === 'object' && error.on.payload && 'chat_id' in error.on.payload) {
         userId = String(error.on.payload.chat_id);
@@ -672,6 +698,7 @@ async function safeSendMessage(ctx: any, text: string, extra?: any) {
       // Сохраняем новое сопоставление
       if (oldChatId && typeof oldChatId === 'number') {
         chatManager.addMapping(oldChatId, newChatId);
+        await localeService.migrate(oldChatId, newChatId);
         
         // Пробуем отправить сообщение в новый чат
         try {
@@ -698,10 +725,26 @@ bot.start(async (ctx) => {
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = chatManager.getActualChatId(chatId);
 
-        await safeSendMessage(ctx, 'Добро пожаловать в игру Белка! Используйте /help для получения списка команд.');
+        const locale = await localeService.get(actualChatId);
+        await safeSendMessage(ctx, t(locale, 'start'));
     } catch (error) {
         console.error('Ошибка в команде /start:', error);
     }
+});
+
+bot.command('language', async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const actualChatId = chatManager.getActualChatId(chatId);
+    const locale = await localeService.get(actualChatId);
+    await ctx.reply(t(locale, 'languagePrompt'), {
+        reply_markup: {
+            inline_keyboard: [[
+                { text: t(locale, 'languageRussian'), callback_data: 'language:ru' },
+                { text: t(locale, 'languageKazakh'), callback_data: 'language:kk' }
+            ]]
+        }
+    });
 });
 
 // Обработчик команды /help
@@ -713,54 +756,7 @@ bot.help(async (ctx) => {
         // Используем ChatManager для получения актуального ID чата
         const actualChatId = chatManager.getActualChatId(chatId);
 
-        const helpText = `
-Белка - карточная игра для 4 игроков.
-
-Команды:
-/join - Присоединиться к игре
-/startbelka - Начать игру в режиме "Белка" (до 12 глаз)
-/startwalka - Начать игру в режиме "Шалқа" (до 6 глаз) - быстрая игра
-/state - Показать текущее состояние игры
-
-📊 *Статистика и рейтинг:*
-/rating - Лидерборд (первые 5 мест)
-/ratingall - Общий лидерборд всех чатов
-/ratingchat - Лидерборд этого чата
-/ranks - Система рангов
-/myrank - Мой персональный ранг
-image.png
-🎮 Управление игрой:
-/endgame - Проголосовать за завершение игры
-/giveup - Сдаться (нужно подтверждение напарника)
-/clearbot - Сбросить текущую игру (в случае проблем)
-/warmuty - Показать благодарности участникам проекта
-
-Как играть:
-- После начала игры ваши карты автоматически доступны в инлайн-панели
-- Чтобы сделать ход, есть три способа:
-  1. Отправьте стикер карты в чат
-  2. Начните вводить @имя_бота в поле сообщения, и выберите карту из появившейся панели
-  3. Отправьте текстом название карты (например: "♠7" или "♥K")
-
-Режимы игры:
-- "Белка" (/startbelka) - классический режим игры до 12 глаз
-- "Шалқа" (/startwalka) - укороченный режим игры до 6 глаз
-
-Правила игры:
-- Цель: набрать 12 глаз (режим "Белка") или 6 глаз (режим "Шалқа"), или выиграть "голую"
-- Старшинство карт: 7, 8, 9, Дама, Король, 10, Туз, Валет
-- Валеты всегда козыри: крести > пики > черви > буби
-- Очки: Туз - 11, 10 - 10, Король - 4, Дама - 3, Валет - 2
-- Если ход начинается с козыря или валета, нужно ходить козырем (включая валетов)
-- Если ход начинается с обычной масти, нужно ходить в эту масть (валеты нельзя использовать)
-- Если нужной масти нет, можно ходить любой картой (включая валетов)
-- После 1-го раунда выигравшей команде всегда 2 глаза
-- В последующих раундах: 61-90 очков = 1 глаз, 91-119 очков = 2 глаза
-- Если валет крести у соперников, победителям раунда +1 глаз
-- 120 очков + все взятки = "голая" (мгновенная победа)
-- Если обе команды набрали по 60 очков = "яйца" (раунд переигрывается, победитель получает 4 очка)
-- Пересдача отключена: раздача полностью случайная
-`;
+        const helpText = t(await localeService.get(actualChatId), 'help');
         await safeSendMessage(ctx, helpText);
     } catch (error) {
         console.error('Ошибка в команде /help:', error);
@@ -780,7 +776,7 @@ bot.command('join', async (ctx) => {
         const username = ctx.from?.username || `Player${userId}`;
         
         if (!userId) {
-            await safeSendMessage(ctx, 'Не удалось определить пользователя');
+            await safeSendMessage(ctx, localize('error.unknownUser'));
             return;
         }
 
@@ -799,14 +795,14 @@ bot.command('join', async (ctx) => {
         }
         
         if (!game) {
-            game = new BelkaGame(actualChatId);
+            game = new BelkaGame(actualChatId, await localeService.get(actualChatId));
             games.set(actualChatId, game);
             // Добавляем пользователя в игру
             const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
             if (success) {
-                await safeSendMessage(ctx, 'Создана новая игра. Вы присоединились к игре.');
+                await safeSendMessage(ctx, localize('lobby.created'));
             } else {
-                await safeSendMessage(ctx, 'Ошибка при присоединении к игре.');
+                await safeSendMessage(ctx, localize('lobby.joinError'));
             }
         } else {
             // Игра уже существует, добавляем игрока
@@ -816,19 +812,19 @@ bot.command('join', async (ctx) => {
             const playerExists = gameState.players.some(p => p.id === userId);
             
             if (playerExists) {
-                await safeSendMessage(ctx, 'Вы уже присоединены к игре.');
+                await safeSendMessage(ctx, localize('lobby.alreadyJoined'));
                 return;
             }
             
             // Проверяем, не заполнена ли уже игра
             if (gameState.players.length >= 4) {
-                await safeSendMessage(ctx, 'Игра уже заполнена (4 игрока).');
+                await safeSendMessage(ctx, localize('lobby.full'));
                 return;
             }
             
             // Проверяем, не активна ли уже игра
             if (gameState.isActive) {
-                await safeSendMessage(ctx, 'Игра уже начата. Дождитесь следующей игры.');
+                await safeSendMessage(ctx, localize('lobby.started'));
                 return;
             }
             
@@ -836,28 +832,28 @@ bot.command('join', async (ctx) => {
             const success = game.addPlayer({ id: userId, username, chatId: actualChatId });
             
             if (success) {
-                await safeSendMessage(ctx, 'Вы присоединились к игре.');
+                await safeSendMessage(ctx, localize('lobby.joined'));
                 
                 // Если это 4-й игрок, сообщаем о готовности начать игру
                 if (gameState.players.length === 4) {
-                    await safeSendMessage(ctx, 'Все игроки собраны! Используйте /startbelka для начала игры в режиме "Белка" или /startwalka для режима "Шалқа".');
+                    await safeSendMessage(ctx, localize('lobby.ready'));
                 }
             } else {
-                await safeSendMessage(ctx, 'Ошибка при присоединении к игре.');
+                await safeSendMessage(ctx, localize('lobby.joinError'));
             }
         }
 
         const gameState = game.getGameState();
-        let playersList = 'Текущие игроки:\n';
+        let playersList = localize('lobby.players');
         gameState.players.forEach((player, index) => {
           playersList += `${index + 1}. ${player.username}\n`;
         });
 
         await safeSendMessage(ctx, playersList);
         if (gameState.players.length === 4) {
-          await safeSendMessage(ctx, 'Все игроки присоединились! Выберите режим игры:\n/startbelka - Классический режим (до 12 глаз)\n/startwalka - Быстрая игра (до 6 глаз)');
+          await safeSendMessage(ctx, localize('lobby.chooseMode'));
         } else {
-          await safeSendMessage(ctx, `Ожидание игроков... ${gameState.players.length}/4`);
+          await safeSendMessage(ctx, localize('lobby.waiting', { 0: gameState.players.length }));
         }
     } catch (error) {
         console.error('Ошибка в команде /join:', error);
@@ -868,12 +864,12 @@ bot.command('join', async (ctx) => {
 // Обработка команды /warmuty - для благодарностей участникам проекта
 bot.command('warmuty', async (ctx) => {
   try {
-      const thanksMessage = `Спасибо шармутам поддерживающим проект: @adylkanovv @dossi4 @m1ralem @ozhek @aidar_t @xviiali @t0ksss @baabyll`;
+      const thanksMessage = localize('credits.thanks');
       
       await safeSendMessage(ctx, thanksMessage);
   } catch (error) {
       console.error('Ошибка при выполнении команды warmuty: ', error);
-      await safeSendMessage(ctx, 'Произошла ошибка при отображении благодарностей');
+      await safeSendMessage(ctx, localize('credits.error'));
   }
 });
 
@@ -901,19 +897,19 @@ bot.command('startbelka', async (ctx) => {
         }
         
         if (!game) {
-            await safeSendMessage(ctx, 'Игра не найдена. Создайте новую игру с помощью /join');
+            await safeSendMessage(ctx, localize('error.noGameJoin'));
             return;
         }
         
         const gameState = game.getGameState();
         
         if (gameState.isActive) {
-            await safeSendMessage(ctx, 'Игра уже запущена!');
+            await safeSendMessage(ctx, localize('error.alreadyStarted'));
             return;
         }
         
         if (gameState.players.length < 4) {
-            await safeSendMessage(ctx, `Недостаточно игроков! Текущее количество: ${gameState.players.length}/4`);
+            await safeSendMessage(ctx, localize('lobby.notEnoughPlayers', { 0: gameState.players.length }));
             return;
         }
         
@@ -939,7 +935,7 @@ bot.command('startbelka', async (ctx) => {
         await safeSendMessage(ctx, gameSummary, {
           reply_markup: {
               inline_keyboard: [[
-                  { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                  { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
               ]]
           }
       });
@@ -979,19 +975,19 @@ bot.command('startwalka', async (ctx) => {
         }
         
         if (!game) {
-            await safeSendMessage(ctx, 'Игра не найдена. Создайте новую игру с помощью /join');
+            await safeSendMessage(ctx, localize('error.noGameJoin'));
             return;
         }
         
         const gameState = game.getGameState();
         
         if (gameState.isActive) {
-            await safeSendMessage(ctx, 'Игра уже запущена!');
+            await safeSendMessage(ctx, localize('error.alreadyStarted'));
             return;
         }
         
         if (gameState.players.length < 4) {
-            await safeSendMessage(ctx, `Недостаточно игроков! Текущее количество: ${gameState.players.length}/4`);
+            await safeSendMessage(ctx, localize('lobby.notEnoughPlayers', { 0: gameState.players.length }));
             return;
         }
         
@@ -1017,7 +1013,7 @@ bot.command('startwalka', async (ctx) => {
         await safeSendMessage(ctx, gameSummary, {
           reply_markup: {
               inline_keyboard: [[
-                  { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                  { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
               ]]
           }
       });
@@ -1039,14 +1035,14 @@ bot.command('rematch', async (ctx) => {
     if (!chatId) return;
     const actualChatId = chatManager.getActualChatId(chatId);
     const game = games.get(actualChatId);
-    if (!game) return await safeSendMessage(ctx, 'Предыдущей игры для реванша нет. Используйте /join.');
+    if (!game) return await safeSendMessage(ctx, localize('rematch.noPreviousGame'));
     const state = game.getGameState();
-    if (state.isActive || state.players.length !== 4) return await safeSendMessage(ctx, 'Реванш доступен после завершённой игры с теми же четырьмя игроками.');
+    if (state.isActive || state.players.length !== 4) return await safeSendMessage(ctx, localize('rematch.unavailable'));
     const summary = game.startGame(state.gameMode);
     const next = game.getGameState();
     initEmojiMapForDeal(actualChatId);
     next.players.forEach(player => playerCardsInPrivateChat.set(player.id, { cards: [...player.cards], gameId: actualChatId }));
-    await safeSendMessage(ctx, `🔁 Реванш! ${summary}`, { reply_markup: { inline_keyboard: [[{ text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }]] } });
+    await safeSendMessage(ctx, localize('rematch.started', { 0: summary }), { reply_markup: { inline_keyboard: [[{ text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }]] } });
     const first = next.players[next.currentPlayerIndex];
     if (first) setMoveTimer(actualChatId, first.id);
 });
@@ -1075,7 +1071,7 @@ bot.command('state', async (ctx) => {
         }
 
         if (!game) {
-            await safeSendMessage(ctx, 'Игра не найдена. Начните новую игру с помощью /startbelka');
+            await safeSendMessage(ctx, localize('error.noGameStart'));
             return;
         }
 
@@ -1084,7 +1080,7 @@ bot.command('state', async (ctx) => {
         await safeSendMessage(ctx, gameSummary, {
             reply_markup: {
                 inline_keyboard: [[
-                    { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                    { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
                 ]]
             }
         });
@@ -1118,7 +1114,7 @@ bot.command('lasttrick', async (ctx) => {
         }
 
         if (!game) {
-            await safeSendMessage(ctx, 'Игра не найдена. Создайте новую игру с помощью /join');
+            await safeSendMessage(ctx, localize('error.noGameJoin'));
             return;
         }
 
@@ -1128,7 +1124,7 @@ bot.command('lasttrick', async (ctx) => {
         }
     } catch (error) {
         console.error('Ошибка в команде /lasttrick:', error);
-        await safeSendMessage(ctx, 'Произошла ошибка при отображении последней взятки');
+        await safeSendMessage(ctx, localize('lastTrick.error'));
     }
 });
 
@@ -1148,10 +1144,10 @@ async function sendLeaderboardAllImproved(ctx: any, offset = 0, isEdit = false) 
   const leaderboardEntries = await statsService.getLeaderboardAllImproved(offset, limit);
   console.log('Fetched improved leaderboardEntries.length:', leaderboardEntries.length);
   if (leaderboardEntries.length === 0 && offset === 0) {
-      await ctx.reply('Рейтинговый лидерборд пока пуст. Для участия в рейтинге нужно сыграть минимум 5 игр.');
+      await ctx.reply(localize('rating.emptyGlobal'));
       return;
     }
-    let message = '🏆 Рейтинговая таблица лидеров (все чаты) 🏆\n\n';
+    let message = localize('rating.globalHeader');
     leaderboardEntries.forEach(([playerId, stats], index) => {
     const s = stats as typeof stats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any };
     const position = offset + index + 1;
@@ -1163,21 +1159,21 @@ async function sendLeaderboardAllImproved(ctx: any, offset = 0, isEdit = false) 
     const seasonEggsCount = (s as any).seasonEggsCount || 0;
     if (s.isQualified) {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
-        `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
-        `🃏 Игры (сезон): ${seasonGamesPlayed} | 🏆 Победы: ${seasonGamesWon}\n` +
-        `🎖 Голые победы: ${seasonGolayaCount} | 🥚 Яйца: ${seasonEggsCount}\n\n`;
+        localize('rating.elo', { 0: s.eloRating }) +
+        localize('rating.seasonGames', { 0: seasonGamesPlayed, 1: seasonGamesWon }) +
+        localize('rating.specialWins', { 0: seasonGolayaCount, 1: seasonEggsCount });
     } else {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
-        `📊 ELO: ${s.eloRating} (${seasonGamesPlayed} игр в сезоне)\n` +
-        `🃏 Игры (сезон): ${seasonGamesPlayed} | 🏆 Победы: ${seasonGamesWon}\n` +
-        `🎖 Голые победы: ${seasonGolayaCount} | 🥚 Яйца: ${seasonEggsCount}\n\n`;
+        localize('rating.calibration', { 0: s.eloRating, 1: seasonGamesPlayed }) +
+        localize('rating.seasonGames', { 0: seasonGamesPlayed, 1: seasonGamesWon }) +
+        localize('rating.specialWins', { 0: seasonGolayaCount, 1: seasonEggsCount });
     }
   });
   
   // Navigation buttons
   const keyboard = [];
-  if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardallimproved:${offset - limit}` });
-  if (leaderboardEntries.length === limit) keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardallimproved:${offset + limit}` });
+  if (offset > 0) keyboard.push({ text: localize('pagination.previous'), callback_data: `leaderboardallimproved:${offset - limit}` });
+  if (leaderboardEntries.length === limit) keyboard.push({ text: localize('pagination.next'), callback_data: `leaderboardallimproved:${offset + limit}` });
   console.log('Improved leaderboard keyboard:', keyboard);
   const replyMarkup = { inline_keyboard: [keyboard] };
   if (isEdit) {
@@ -1198,10 +1194,10 @@ async function sendLeaderboardChatImproved(ctx: any, chatId: number, offset = 0,
   const leaderboardEntries = await statsService.getLeaderboardChatImproved(chatId, offset, limit);
   console.log('Fetched improved chat leaderboardEntries.length:', leaderboardEntries.length);
   if (leaderboardEntries.length === 0 && offset === 0) {
-    await safeSendMessage(ctx, 'Рейтинговый лидерборд для этого чата пока пуст. Для участия в рейтинге нужно сыграть минимум 5 игр.');
+    await safeSendMessage(ctx, localize('rating.emptyChat'));
     return;
   }
-  let message = '🏆 Рейтинговая таблица лидеров (этот чат) 🏆\n\n';
+  let message = localize('rating.chatHeader');
   leaderboardEntries.forEach(([playerId, stats], index) => {
     const s = stats as typeof stats & { winrate: number, complexRating: number, isQualified: boolean, eloRating: number, rank: any };
     const position = offset + index + 1;
@@ -1213,23 +1209,23 @@ async function sendLeaderboardChatImproved(ctx: any, chatId: number, offset = 0,
     const seasonEggsCountC = (s as any).seasonEggsCount || 0;
     if (s.isQualified) {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
-        `📊 Рейтинг: ⚔️ ${s.eloRating} ELO\n` +
-        `${s.rank.icon} Ранг: ${s.rank.name} · ${(s as any).rankPoints}/100 RP\n` +
-        `🃏 Игры (сезон): ${seasonGamesPlayedC} | 🏆 Победы: ${seasonGamesWonC}\n` +
-        `🎖 Голые победы: ${seasonGolayaCountC} | 🥚 Яйца: ${seasonEggsCountC}\n\n`;
+        localize('rating.elo', { 0: s.eloRating }) +
+        localize('rating.rank', { 0: s.rank.icon, 1: (currentLocale() === 'kk' ? s.rank.nameKz : s.rank.name), 2: (s as any).rankPoints }) +
+        localize('rating.seasonGames', { 0: seasonGamesPlayedC, 1: seasonGamesWonC }) +
+        localize('rating.specialWins', { 0: seasonGolayaCountC, 1: seasonEggsCountC });
     } else {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
-        `📊 ELO: ${s.eloRating} (${seasonGamesPlayedC} игр в сезоне)\n` +
-        `${s.rank.icon} Ранг: ${s.rank.name} · ${(s as any).rankPoints}/100 RP\n` +
-        `🃏 Игры (сезон): ${seasonGamesPlayedC} | 🏆 Победы: ${seasonGamesWonC}\n` +
-        `🎖 Голые победы: ${seasonGolayaCountC} | 🥚 Яйца: ${seasonEggsCountC}\n\n`;
+        localize('rating.calibration', { 0: s.eloRating, 1: seasonGamesPlayedC }) +
+        localize('rating.rank', { 0: s.rank.icon, 1: (currentLocale() === 'kk' ? s.rank.nameKz : s.rank.name), 2: (s as any).rankPoints }) +
+        localize('rating.seasonGames', { 0: seasonGamesPlayedC, 1: seasonGamesWonC }) +
+        localize('rating.specialWins', { 0: seasonGolayaCountC, 1: seasonEggsCountC });
     }
     });
   
   // Navigation buttons
   const keyboard = [];
-  if (offset > 0) keyboard.push({ text: '⬅️ Назад', callback_data: `leaderboardchatimproved:${offset - limit}` });
-  if (leaderboardEntries.length === limit) keyboard.push({ text: 'Вперед ➡️', callback_data: `leaderboardchatimproved:${offset + limit}` });
+  if (offset > 0) keyboard.push({ text: localize('pagination.previous'), callback_data: `leaderboardchatimproved:${offset - limit}` });
+  if (leaderboardEntries.length === limit) keyboard.push({ text: localize('pagination.next'), callback_data: `leaderboardchatimproved:${offset + limit}` });
   console.log('Improved chat leaderboard keyboard:', keyboard);
   const replyMarkup = { inline_keyboard: [keyboard] };
   if (isEdit) {
@@ -1275,6 +1271,17 @@ bot.action(/leaderboardchatimproved:(\d+)/, async (ctx) => {
   await sendLeaderboardChatImproved(ctx, actualChatId, Math.max(0, offset), true);
 });
 
+bot.action(/^language:(ru|kk)$/, async (ctx) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+  const locale = ctx.match[1] as Locale;
+  await localeService.set(chatManager.getActualChatId(chatId), locale);
+    games.get(chatManager.getActualChatId(chatId))?.setLocale(locale);
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(t(locale, 'languageChanged'));
+  await updateChatMenu(chatManager.getActualChatId(chatId), locale).catch(error => console.error('Cannot update chat command menu:', error));
+});
+
 // --- Auto-move system ---
 
 interface GameTimer {
@@ -1298,6 +1305,11 @@ function clearMoveTimer(_chatId: number) {
 
 // Функция для автоматического хода
 async function makeAutoMove(chatId: number, playerId: number) {
+  const locale = await localeService.get(chatManager.getActualChatId(chatId));
+  games.get(chatId)?.setLocale(locale);
+  return withLocale(locale, () => makeAutoMoveLocalized(chatId, playerId));
+}
+async function makeAutoMoveLocalized(chatId: number, playerId: number) {
   try {
     const game = games.get(chatId);
     if (!game) {
@@ -1335,7 +1347,7 @@ async function makeAutoMove(chatId: number, playerId: number) {
 
     if (result.success) {
       // Отправляем уведомление об автоматическом ходе
-      const autoMessage = `⏰ Время истекло! Автоматический ход: @${currentPlayer.username} сыграл ${selectedCard.suit}${selectedCard.rank}`;
+      const autoMessage = localize('timer.autoMove', { 0: currentPlayer.username, 1: selectedCard.suit, 2: selectedCard.rank });
       await bot.telegram.sendMessage(chatId, autoMessage);
       
       // Обрабатываем результат как обычно
@@ -1346,7 +1358,7 @@ async function makeAutoMove(chatId: number, playerId: number) {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [[
-              { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+              { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
             ]]
           }
         });
@@ -1359,7 +1371,7 @@ async function makeAutoMove(chatId: number, playerId: number) {
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [[
-                { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
               ]]
             }
           });
@@ -1573,7 +1585,7 @@ bot.command('endgame', async (ctx) => {
         }
 
         if (!game) {
-            await ctx.reply('Игра не найдена');
+            await ctx.reply(localize('error.noGame'));
             return;
         }
 
@@ -1582,16 +1594,16 @@ bot.command('endgame', async (ctx) => {
 
         switch (result.status) {
             case 'not_player':
-                await ctx.reply('Вы не являетесь участником игры или игра не активна');
+                await ctx.reply(localize('endgame.notPlayer'));
                 break;
             case 'already_voted':
-                await ctx.reply('Вы уже проголосовали за завершение игры');
+                await ctx.reply(localize('endgame.alreadyVoted'));
                 break;
             case 'voted':
                 const votesCount = result.votesCount || 0;
                 const requiredVotes = result.requiredVotes || 0;
                 
-                await ctx.reply(`Игрок @${ctx.from.username} проголосовал за завершение игры. Голосов: ${votesCount}/${requiredVotes}`);
+                await ctx.reply(localize('endgame.vote', { 0: ctx.from.username, 1: votesCount, 2: requiredVotes }));
                 
                 // Проверяем, достаточно ли голосов для завершения игры
                 if (votesCount >= requiredVotes) {
@@ -1610,15 +1622,15 @@ bot.command('endgame', async (ctx) => {
                     clearMoveTimer(actualChatId);
                     console.log(`[TIMER] Таймеры очищены после завершения игры голосованием в чате ${actualChatId}`);
                     
-                    await ctx.reply('Игра отменена по голосованию игроков. ELO и статистика не изменены. Используйте /join, чтобы начать новую игру.');
+                    await ctx.reply(localize('endgame.cancelled'));
                 }
                 break;
             default:
-                await ctx.reply('Не удалось проголосовать за завершение игры');
+                await ctx.reply(localize('endgame.voteFailed'));
         }
     } catch (error) {
         console.error('Ошибка в команде /endgame:', error);
-        await ctx.reply('Произошла ошибка при обработке команды');
+        await ctx.reply(localize('error.commandFailed'));
     }
 });
 
@@ -1638,38 +1650,38 @@ bot.command('giveup', async (ctx) => {
                 games.delete(chatId);
             }
         }
-        if (!game) return await safeSendMessage(ctx, 'Нет активной игры.');
+        if (!game) return await safeSendMessage(ctx, localize('error.noActiveGame'));
 
         const result = await game.giveUp(userId);
-        const username = ctx.from.username || 'игрок';
+        const username = ctx.from.username || localize('game.playerFallback');
         switch (result.status) {
             case 'not_player':
-                await safeSendMessage(ctx, 'Сдаться может только участник активной игры.');
+                await safeSendMessage(ctx, localize('giveup.notPlayer'));
                 break;
             case 'no_round_points':
-                await safeSendMessage(ctx, 'Сдаться нельзя: ваша команда ещё не взяла ни одного очка в этом раунде.');
+                await safeSendMessage(ctx, localize('giveup.noPoints'));
                 break;
             case 'already_voted':
-                await safeSendMessage(ctx, 'Вы уже подтвердили сдачу. Ждём напарника.');
+                await safeSendMessage(ctx, localize('giveup.alreadyVoted'));
                 break;
             case 'other_team_pending':
-                await safeSendMessage(ctx, 'Другая команда уже ожидает подтверждения сдачи от своего напарника.');
+                await safeSendMessage(ctx, localize('giveup.otherTeamPending'));
                 break;
             case 'voted':
                 saveGameState(actualChatId, game).catch(console.error);
-                await safeSendMessage(ctx, `🏳️ @${username} предлагает сдаться за команду ${result.surrenderingTeam}. Нужна команда /giveup от его напарника.`);
+                await safeSendMessage(ctx, localize('giveup.vote', { 0: username, 1: result.surrenderingTeam }));
                 break;
             case 'surrendered': {
                 clearMoveTimer(actualChatId);
                 deleteGameState(actualChatId).catch(console.error);
                 const winner = result.surrenderingTeam === 1 ? 2 : 1;
-                await safeSendMessage(ctx, `🏳️ Команда ${result.surrenderingTeam} сдалась. Победа команды ${winner}!${result.eloSummary || ''}`);
+                await safeSendMessage(ctx, localize('giveup.surrendered', { 0: result.surrenderingTeam, 1: winner, 2: result.eloSummary || '' }));
                 break;
             }
         }
     } catch (error) {
         console.error('Ошибка в команде /giveup:', error);
-        await safeSendMessage(ctx, 'Не удалось обработать сдачу.');
+        await safeSendMessage(ctx, localize('giveup.error'));
     }
 });
 
@@ -1684,7 +1696,7 @@ bot.command('clearbot', async (ctx) => {
 
         const userId = ctx.from?.id;
         if (!userId) {
-            await ctx.reply('Не удалось определить пользователя');
+            await ctx.reply(localize('error.unknownUser'));
             return;
         }
 
@@ -1720,13 +1732,13 @@ bot.command('clearbot', async (ctx) => {
             clearMoveTimer(actualChatId);
             console.log(`[TIMER] Таймеры очищены для чата ${actualChatId}`);
             
-            await ctx.reply('🧹 Игра успешно сброшена. Используйте /join, чтобы начать новую игру.');
+            await ctx.reply(localize('clearbot.cleared'));
         } else {
-            await ctx.reply('Активной игры не найдено. Используйте /join, чтобы начать новую игру.');
+            await ctx.reply(localize('clearbot.noGame'));
         }
     } catch (error) {
         console.error('Ошибка в команде /clearbot:', error);
-        await ctx.reply('Произошла ошибка при сбросе игры');
+        await ctx.reply(localize('clearbot.error'));
     }
 });
 
@@ -1734,75 +1746,39 @@ bot.command('clearbot', async (ctx) => {
 bot.command('ranks', async (ctx) => {
     const statsService = new StatsService();
     const allRanks = statsService.getAllRanks();
+    const chatId = ctx.chat?.id;
+    const locale = await localeService.get(chatManager.getActualChatId(chatId || 0));
     
-    let message = '🏆 Система рангов белки 🏆\n\n';
-    message += 'Ранги основаны на сезонных RP в казахском стиле. В каждом ранге 0–100 RP:\n\n';
+    let message = t(locale, 'rankSystem');
     
     allRanks.forEach((rank) => {
-        message += `${rank.icon} **${rank.name}**\n`;
-        message += `📊 Ранг ${rank.tier + 1} из ${allRanks.length}\n`;
-        message += `📝 ${rank.description}\n\n`;
+        message += `${rank.icon} **${locale === 'kk' ? rank.nameKz : rank.name}**\n`;
+        message += t(locale, 'rankLine', { current: rank.tier + 1, total: allRanks.length, description: metadataText(rank.description, locale) });
     });
     
-    message += '💡 *Совет*: Побеждайте, чтобы получать RP; на высоких рангах потери за поражение больше.';
+    message += t(locale, 'rankTip');
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
-});
-
-// Команда помощи
-bot.command('help', (ctx) => {
-  const helpMessage = `🎮 *Добро пожаловать в игру Белка!* 🎮
-
-🃏 *Команды игры:*
-/startbelka - Начать игру Белка (до 12 глаз)
-/startwalka - Начать игру Шалқа (до 6 глаз)
-/join - Присоединиться к игре
-/lasttrick - Показать последнюю сыгранную взятку
-/endgame - Проголосовать за завершение игры
-/clearbot - Сбросить игру
-
-📊 *Статистика и рейтинг:*
-/rating - Лидерборд (первые 5 мест)
-/ratingall - Общий лидерборд всех чатов
-/ratingchat - Лидерборд этого чата
-/ranks - Система рангов
-/myrank - Мой ранг в этом чате
-
-ℹ️ *Информация:*
-/help - Эта справка
-/warmuty - Благодарности
-
-🎯 *Как играть:*
-1. Создайте игру командой /startbelka или /startwalka
-2. Другие игроки присоединяются через /join
-3. Когда наберется 4 игрока, игра начнется автоматически
-4. Используйте кнопки под картами для ходов
-
-🏆 *Рейтинговая система:*
-- Для участия в рейтинге нужно сыграть минимум 5 игр
-- ELO рейтинг учитывает силу противников и вашу игру
-- Казахские ранги от Сарт до Аңыз (/ranks)`;
-  
-  ctx.reply(helpMessage, { parse_mode: 'Markdown' });
 });
 
 // Команда для просмотра персонального ранга в чате
 bot.command('myrank', async (ctx) => {
     const userId = ctx.from?.id;
-    const username = ctx.from?.username || ctx.from?.first_name || 'Неизвестный';
+    const username = ctx.from?.username || ctx.from?.first_name || localize('user.unknown');
     const chatId = ctx.chat?.id;
     
     if (!userId) {
-        await ctx.reply('Не удалось определить пользователя.');
+        await ctx.reply(localize('error.unknownUserSentence'));
         return;
     }
     
     if (!chatId || chatId > 0) {
-        await ctx.reply('❌ Эта команда работает только в групповых чатах.\n\n💡 Для просмотра глобального рейтинга используйте:\n/ratingall - общий лидерборд');
+        await ctx.reply(localize('rank.groupOnly'));
         return;
     }
     
     const statsService = new StatsService();
+    const locale = await localeService.get(chatManager.getActualChatId(chatId));
     
     const playerELO = await statsService.getPlayerChatELO(userId, chatId);
     const playerRank = await statsService.getPlayerChatRank(userId, chatId);
@@ -1810,24 +1786,24 @@ bot.command('myrank', async (ctx) => {
     const rank = statsService.getRankByRP(playerRank.tier);
     const progress = statsService.getRankProgress(playerRank.tier, playerRank.points);
     
-    let message = `🎖 *Ваш ранг в этом чате, ${username}* 🎖\n\n`;
-    message += `${rank.icon} **${rank.name}**\n`;
+    let message = t(locale, 'myRankHeader', { username });
+    message += `${rank.icon} **${locale === 'kk' ? rank.nameKz : rank.name}**\n`;
     message += `⚔️ ELO: ${playerELO}\n`;
     message += `📊 ${playerRank.points}/100 RP\n`;
-    message += `🔥 Победная серия: ${features.winStreak} | Рекорд: ${features.bestWinStreak}\n`;
-    if (features.activeTitle) message += `🏷 Титул: ${features.activeTitle}\n`;
-    message += `📝 ${rank.description}\n\n`;
+    message += t(locale, 'streak', { current: features.winStreak, best: features.bestWinStreak });
+    if (features.activeTitle) message += localize('rank.activeTitle', { 0: titleName(features.activeTitle) });
+    message += `📝 ${metadataText(rank.description, locale)}\n\n`;
     
     if (progress.next) {
         const progressBar = '▓'.repeat(Math.floor(progress.progress / 10)) + '░'.repeat(10 - Math.floor(progress.progress / 10));
-        message += `📈 *Прогресс до ${progress.next.name}:*\n`;
+        message += t(locale, 'rankProgress', { rank: locale === 'kk' ? progress.next.nameKz : progress.next.name }) + '\n';
         message += `${progressBar} ${progress.progress}%\n`;
-        message += `🎯 Нужно еще: ${progress.rpToNext} RP\n\n`;
+        message += t(locale, 'rankNeeded', { points: progress.rpToNext }) + '\n\n';
     } else {
-        message += `🌟 *Поздравляем!* Вы достигли максимального ранга!\n\n`;
+        message += t(locale, 'rankMax') + '\n\n';
     }
 
-    message += '💪 Побеждайте, чтобы повышать ранг!';
+    message += t(locale, 'rankMotivation');
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
 });
@@ -1837,20 +1813,20 @@ bot.command('titles', async (ctx) => {
     const chatId = ctx.chat?.id;
     if (!userId || !chatId) return;
     const features = await new StatsService().getChatFeatures(userId, chatManager.getActualChatId(chatId));
-    const list = features.titles.length ? features.titles.map(title => `• ${title}`).join('\n') : 'Пока нет открытых титулов.';
-    await ctx.reply(`🏷 Ваш активный титул: ${features.activeTitle || 'нет'}\n\n🎖 Открытые титулы:\n${list}\n\nВыбрать: /title название`);
+    const list = features.titles.length ? features.titles.map(title => `• ${titleName(title)}`).join('\n') : localize('titles.empty');
+    await ctx.reply(localize('titles.list', { 0: features.activeTitle ? titleName(features.activeTitle) : localize('titles.none'), 1: list }));
 });
 
 bot.command('title', async (ctx) => {
     const userId = ctx.from?.id;
     const chatId = ctx.chat?.id;
-    const title = ctx.message.text.replace(/^\/title\s*/i, '').trim();
+    const title = normalizeTitle(ctx.message.text.replace(/^\/title(?:@\w+)?(?:\s+|$)/i, '').trim());
     if (!userId || !chatId || !title) {
-        await ctx.reply('Использование: /title название титула');
+        await ctx.reply(localize('titles.usage'));
         return;
     }
     const ok = await new StatsService().setActiveTitle(userId, chatManager.getActualChatId(chatId), title);
-    await ctx.reply(ok ? `🏷 Активный титул: ${title}` : 'Такой титул ещё не открыт. Посмотрите /titles');
+    await ctx.reply(ok ? localize('titles.selected', { 0: titleName(title) }) : localize('titles.locked'));
 });
 
 // === Season commands (#11) ===
@@ -1863,20 +1839,20 @@ bot.command('alltime', async (ctx) => {
   try {
     const entries = await statsService.getLeaderboardAlltime(0, 10);
     if (entries.length === 0) {
-      await safeSendMessage(ctx, 'Ещё нет статистики.');
+      await safeSendMessage(ctx, localize('alltime.empty'));
       return;
     }
-    let msg = '📜 *All-Time статистика игроков* (игры/победы/голые/яйца/взятки):\n\n';
+    let msg = localize('alltime.header');
     entries.forEach((row, idx) => {
       const winrate = row.games_played > 0 ? Math.round((row.games_won / row.games_played) * 100) : 0;
       msg += `${idx + 1}. *@${row.username}*\n` +
-        `🃏 Игр: ${row.games_played} | 🏆 Побед: ${row.games_won} (${winrate}%)\n` +
-        `🎖 Голых: ${row.golaya_count} | 🥚 Яиц: ${row.eggs_count} | ✋ Взяток: ${row.total_tricks}\n\n`;
+        localize('alltime.games', { 0: row.games_played, 1: row.games_won, 2: winrate }) +
+        localize('alltime.specialStats', { 0: row.golaya_count, 1: row.eggs_count, 2: row.total_tricks });
     });
     await safeSendMessage(ctx, msg, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Ошибка /alltime:', error);
-    await safeSendMessage(ctx, 'Ошибка при получении статистики.');
+    await safeSendMessage(ctx, localize('alltime.error'));
   }
 });
 
@@ -1885,23 +1861,23 @@ bot.command('history', async (ctx) => {
   try {
     const history = await statsService.getChampionsHistory();
     if (history.length === 0) {
-      await safeSendMessage(ctx, 'История чемпионов пока пуста.');
+      await safeSendMessage(ctx, localize('history.empty'));
       return;
     }
-    let msg = '🏆 *История чемпионов:*\n\n';
+    let msg = localize('history.header');
     history.forEach(season => {
       if (season.is_current) {
-        msg += `🔥 ${season.season_name} — в процессе...\n`;
+        msg += localize('history.inProgress', { 0: seasonName(season.season_name) });
       } else if (season.champion_username) {
-        msg += `👑 ${season.season_name} — @${season.champion_username} 🏆\n`;
+        msg += `👑 ${seasonName(season.season_name)} — @${season.champion_username} 🏆\n`;
       } else {
-        msg += `📌 ${season.season_name} — чемпион не определён\n`;
+        msg += localize('history.noChampion', { 0: seasonName(season.season_name) });
       }
     });
     await safeSendMessage(ctx, msg, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Ошибка /history:', error);
-    await safeSendMessage(ctx, 'Ошибка при получении истории чемпионов.');
+    await safeSendMessage(ctx, localize('history.error'));
   }
 });
 
@@ -1910,27 +1886,27 @@ bot.command('end_season', async (ctx) => {
   try {
     const userId = ctx.from?.id;
     if (!userId || userId !== T0KSSS_ID) {
-      await safeSendMessage(ctx, '❌ Только @t0ksss может завершить сезон.');
+      await safeSendMessage(ctx, localize('season.unauthorized'));
       return;
     }
 
-    await safeSendMessage(ctx, '⏳ Завершаем сезон...');
+    await safeSendMessage(ctx, localize('season.ending'));
 
     const result = await statsService.endSeason();
     const champMsg = result.champion
       ? `@${result.champion.username} (ELO: ${result.champion.elo})`
-      : 'не определён';
+      : localize('season.noChampion');
 
-    const announcement = `🏆 *${result.endedSeasonName} завершён!*\n` +
-      `👑 Чемпион: ${champMsg}\n\n` +
-      `🆕 *Начинается ${result.newSeasonName}!*\n` +
-      `📊 ELO всех игроков сброшен до 1000.\n` +
-      `🎮 Удачи в новом сезоне!`;
+    const announcement = localize('season.ended', { 0: seasonName(result.endedSeasonName) }) +
+      localize('season.champion', { 0: champMsg }) +
+      localize('season.started', { 0: seasonName(result.newSeasonName) }) +
+      localize('season.eloReset') +
+      localize('season.goodLuck');
 
     await safeSendMessage(ctx, announcement, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Ошибка /end_season:', error);
-    await safeSendMessage(ctx, `Ошибка при завершении сезона: ${(error as any).message}`);
+    await safeSendMessage(ctx, localize('season.error', { 0: localize('error.commandFailed') }));
   }
 });
 
@@ -1966,7 +1942,7 @@ bot.command('swap', async (ctx) => {
     }
 
     if (!game) {
-      await safeSendMessage(ctx, 'Нет активной игры для обмена.');
+      await safeSendMessage(ctx, localize('swap.noGame'));
       return;
     }
 
@@ -1974,7 +1950,7 @@ bot.command('swap', async (ctx) => {
     
     // Состав и места фиксируются сразу после /startbelka или /startwalka.
     if (state.isActive) {
-      await safeSendMessage(ctx, 'Обмен местами доступен только до начала игры.');
+      await safeSendMessage(ctx, localize('swap.beforeGameOnly'));
       return;
     }
 
@@ -1984,13 +1960,13 @@ bot.command('swap', async (ctx) => {
     if (!pending) {
       // Если нет ожидания, ставим пользователя в очередь
       pendingSwap.set(actualChatId, { id: userId, username });
-      await safeSendMessage(ctx, 'Ожидание обмена: следующий игрок, который напишет /swap, поменяется с вами местами. Для отмены используйте /swapcancel');
+      await safeSendMessage(ctx, localize('swap.waiting'));
       return;
     }
 
     // Если пользователь сам себя вызывает
     if (pending.id === userId) {
-      await safeSendMessage(ctx, 'Вы уже ожидаете обмена. Для отмены используйте /swapcancel');
+      await safeSendMessage(ctx, localize('swap.alreadyWaiting'));
       return;
     }
 
@@ -2004,9 +1980,9 @@ bot.command('swap', async (ctx) => {
     pendingSwap.delete(actualChatId);
 
     if (result.success) {
-      await safeSendMessage(ctx, `Обмен местами выполнен между @${firstPlayer.username} и @${secondPlayer.username}.`);
+      await safeSendMessage(ctx, localize('swap.completed', { 0: firstPlayer.username, 1: secondPlayer.username }));
     } else {
-      await safeSendMessage(ctx, result.message || 'Не удалось выполнить обмен.');
+      await safeSendMessage(ctx, result.message || localize('swap.failed'));
     }
 
     const updatedState = game.getGameState();
@@ -2023,13 +1999,13 @@ bot.command('swap', async (ctx) => {
     await safeSendMessage(ctx, gameSummary, {
         reply_markup: {
             inline_keyboard: [[
-                { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
             ]]
         }
     });
   } catch (error) {
     console.error('Ошибка в команде /swap:', error);
-    await safeSendMessage(ctx, 'Произошла ошибка при обмене местами');
+    await safeSendMessage(ctx, localize('swap.error'));
   }
 });
 
@@ -2044,21 +2020,21 @@ bot.command('swapcancel', async (ctx) => {
 
     const waiterId = pendingSwap.get(actualChatId);
     if (!waiterId) {
-      await safeSendMessage(ctx, 'Сейчас никто не ожидает обмена.');
+      await safeSendMessage(ctx, localize('swap.noPending'));
       return;
     }
 
     // Только инициатор может отменить свой запрос
     if (waiterId.id !== userId) {
-      await safeSendMessage(ctx, `Отменить ожидание обмена может только его инициатор (@${waiterId.username}).`);
+      await safeSendMessage(ctx, localize('swap.onlyInitiator', { 0: waiterId.username }));
       return;
     }
 
     pendingSwap.delete(actualChatId);
-    await safeSendMessage(ctx, 'Ожидание обмена отменено.');
+    await safeSendMessage(ctx, localize('swap.cancelled'));
   } catch (error) {
     console.error('Ошибка в команде /swapcancel:', error);
-    await safeSendMessage(ctx, 'Произошла ошибка при отмене ожидания обмена');
+    await safeSendMessage(ctx, localize('swap.cancelError'));
   }
 });
 
@@ -2080,7 +2056,7 @@ function formatPlayerCards(player: Player, state: GameState): string {
     });
 
     // Формируем сообщение с картами
-    let message = `Карты игрока ${player.username} (всего ${player.cards.length}):\n`;
+    let message = localize('hand.header', { 0: player.username, 1: player.cards.length });
     
     // Отображение карт по мастям
     const suits: CardSuit[] = ['♠', '♣', '♦', '♥'];
@@ -2094,7 +2070,7 @@ function formatPlayerCards(player: Player, state: GameState): string {
         }
     });
 
-    message += `\n\n${state.trump === null ? 'Козырей нет' : `Козырь: ${state.trump}`}`;
+    message += `\n\n${state.trump === null ? localize('hand.noTrump') : localize('hand.trump', { 0: state.trump })}`;
     
     // Показываем значок козыря для держателя валета крести
     if (state.clubJackHolder && !state.hideClubJackHolder && player.id === state.clubJackHolder.id) {
@@ -2109,7 +2085,7 @@ function formatPlayerCards(player: Player, state: GameState): string {
     const isCurrentPlayer = state.players[state.currentPlayerIndex]?.id === player.id;
     
     if (isCurrentPlayer) {
-        message += '\n\n🎯 Сейчас ваш ход!';
+        message += localize('hand.yourTurn');
         
         if (state.tableCards.length > 0) {
             const firstCard = state.tableCards[0].card;
@@ -2125,9 +2101,9 @@ function formatPlayerCards(player: Player, state: GameState): string {
                 );
                 
                 if (hasTrump) {
-                    message += `\n❗️ Нужно ходить козырем (включая вальтов), так как первая карта козырная`;
+                    message += localize('hand.mustPlayTrump');
                 } else {
-                    message += `\n❗️ У вас нет козырей, можно ходить любой картой`;
+                    message += localize('hand.noTrumpPlayAny');
                 }
             } else {
                 // Если первая карта не козырная и не валет
@@ -2136,14 +2112,14 @@ function formatPlayerCards(player: Player, state: GameState): string {
                 const hasSuit = player.cards.some(c => c.suit === firstCardSuit && c.rank !== 'J');
                 
                 if (hasSuit) {
-                    message += `\n❗️ Нужно ходить в масть ${firstCardSuit}, валеты нельзя использовать`;
+                    message += localize('hand.mustFollowSuit', { 0: firstCardSuit });
                 } else {
-                    message += `\n❗️ У вас нет карт масти ${firstCardSuit}, можно ходить любой картой (включая валетов)`;
+                    message += localize('hand.noSuitPlayAny', { 0: firstCardSuit });
                 }
             }
         }
     } else {
-        message += '\n\nОжидайте свой ход...';
+        message += localize('hand.waitYourTurn');
     }
 
     return message;
@@ -2151,18 +2127,18 @@ function formatPlayerCards(player: Player, state: GameState): string {
 
 // Функция для получения публичного состояния игры
 function getPublicGameState(state: GameState): string {
-    let message = `🃏 Раунд ${state.currentRound}\n`;
-    message += `♠️♣️♦️♥️ Козырь: ${state.trump}`;
+    let message = localize('state.round', { 0: state.currentRound });
+    message += localize('state.trump', { 0: state.trump });
     
     // Показываем значок козыря для держателя валета крести
     if (state.clubJackHolder && !state.hideClubJackHolder) {
-        message += ` (определен игроком ${state.clubJackHolder.username})`;
+        message += localize('state.trumpHolder', { 0: state.clubJackHolder.username });
     }
     
     message += `\n\n`;
 
     // Информация о командах
-    message += '👥 Команда 1:\n';
+    message += localize('state.team1');
     for (const playerId of state.teams.team1.players.map(p => p.id)) {
         const player = state.players.find(p => p.id === playerId);
         if (player) {
@@ -2178,16 +2154,16 @@ function getPublicGameState(state: GameState): string {
                 playerName += ` (${state.playerSuitMap.get(player.id)})`;
             }
             
-            message += `- ${playerName} (${player.cards.length} карт)`;
+            message += localize('state.playerCards', { 0: playerName, 1: player.cards.length });
             
             message += `\n`;
         }
     }
-    message += `Очки в раунде: ${state.teams.team1.score}\n`;
-    message += `Взятки: ${state.teams.team1.tricks}\n`;
-    message += `Глаза: ${state.teams.team1.eyes}\n\n`;
+    message += localize('state.roundScore', { 0: state.teams.team1.score });
+    message += localize('state.tricks', { 0: state.teams.team1.tricks });
+    message += localize('state.eyes', { 0: state.teams.team1.eyes });
 
-    message += '👥 Команда 2:\n';
+    message += localize('state.team2');
     for (const playerId of state.teams.team2.players.map(p => p.id)) {
         const player = state.players.find(p => p.id === playerId);
         if (player) {
@@ -2203,18 +2179,18 @@ function getPublicGameState(state: GameState): string {
                 playerName += ` (${state.playerSuitMap.get(player.id)})`;
             }
             
-            message += `- ${playerName} (${player.cards.length} карт)`;
+            message += localize('state.playerCards', { 0: playerName, 1: player.cards.length });
             
             message += `\n`;
         }
     }
-    message += `Очки в раунде: ${state.teams.team2.score}\n`;
-    message += `Взятки: ${state.teams.team2.tricks}\n`;
-    message += `Глаза: ${state.teams.team2.eyes}\n\n`;
+    message += localize('state.roundScore', { 0: state.teams.team2.score });
+    message += localize('state.tricks', { 0: state.teams.team2.tricks });
+    message += localize('state.eyes', { 0: state.teams.team2.eyes });
 
     // Информация о текущем ходе
     if (state.tableCards.length > 0) {
-        message += '🎮 На столе:\n';
+        message += localize('state.table');
         state.tableCards.forEach(tableCard => {
             if (!tableCard) return; // Пропускаем, если карта не определена
             
@@ -2222,7 +2198,7 @@ function getPublicGameState(state: GameState): string {
             if (player) {
                 message += `${player.username}: ${tableCard.card.suit}${tableCard.card.rank}\n`;
             } else {
-                message += `Неизвестный игрок: ${tableCard.card.suit}${tableCard.card.rank}\n`;
+                message += localize('state.unknownPlayerCard', { 0: tableCard.card.suit, 1: tableCard.card.rank });
             }
         });
     }
@@ -2230,7 +2206,7 @@ function getPublicGameState(state: GameState): string {
     // Информация о текущем игроке
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (currentPlayer) {
-        message += `\n🎯 Сейчас ход: @${currentPlayer.username}`;
+        message += localize('state.currentTurn', { 0: currentPlayer.username });
     }
 
     return message;
@@ -2283,7 +2259,7 @@ async function sendPlayerCardsAsStickers(ctx: any, player: Player, gameState: Ga
             });
             
             // Добавляем информацию об inline режиме
-            await ctx.reply('Ваши карты (используйте стикеры для хода):\n\nЧтобы быстро выбрать карту, начните писать @ваш_бот в чате и выберите карту из появившейся панели.');
+            await ctx.reply(localize('hand.inlineHint'));
             
             for (const card of sortedCards) {
                 const stickerKey = `${card.suit}${card.rank}`;
@@ -2300,14 +2276,14 @@ async function sendPlayerCardsAsStickers(ctx: any, player: Player, gameState: Ga
                 }
             }
         } else {
-            await ctx.reply('У вас нет карт');
+            await ctx.reply(localize('hand.empty'));
             
             // Очищаем информацию о картах в хранилище
             playerCardsInPrivateChat.delete(player.id);
         }
     } catch (error) {
         console.error('Ошибка при отправке стикеров карт:', error);
-        await ctx.reply('Произошла ошибка при отправке карт');
+        await ctx.reply(localize('hand.error'));
     }
 }
 
@@ -2353,7 +2329,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
                   cardInfo = { suit: resolved.suit, rank: resolved.rank } as { suit: CardSuit, rank: CardRank };
                 } else {
                   console.log(`[LOG] Эмодзи-токен ${emoji} не найден в текущем сторе`);
-                  await ctx.reply('Этот выбор недействителен для текущей раздачи.');
+                  await ctx.reply(localize('move.staleSelection'));
                   return;
                 }
             } else if (cardMatch) {
@@ -2411,7 +2387,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
         // Проверяем, чей сейчас ход
         if (userId !== currentPlayerId) {
             console.log(`[LOG] Не ход пользователя ${userId}, сейчас ход игрока ${currentPlayer.username}`);
-            await ctx.reply(`Сейчас ход игрока ${currentPlayer.username}`);
+            await ctx.reply(localize('move.currentPlayer', { 0: currentPlayer.username }));
             return;
         }
 
@@ -2427,7 +2403,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
             
             if (cardIndex === -1) {
                 console.log(`[LOG] Карта не найдена в руке игрока ${currentPlayer.username}`);
-                await ctx.reply(`У вас нет такой карты`);
+                await ctx.reply(localize('move.noSuchCard'));
                 return;
             }
 
@@ -2450,7 +2426,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
             
             if (!result.success) {
                 console.log(`[LOG] Ход не удался: ${result.message}`);
-                await ctx.reply(result.message || 'Не удалось сделать ход');
+                await ctx.reply(result.message || localize('move.failed'));
                 return;
             }
 
@@ -2481,7 +2457,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
                 const sent = await ctx.reply(result.roundSummary, {
                   reply_markup: {
                       inline_keyboard: [[
-                          { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                          { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
                       ]]
                   }
                 });
@@ -2495,7 +2471,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
                     await ctx.reply(result.roundResults, {
                       reply_markup: {
                           inline_keyboard: [[
-                              { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                              { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
                           ]]
                       }
                   });
@@ -2527,7 +2503,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
                 // Снимок и удаление предыдущих сообщений о ходе (не финальные итоги)
                 scheduleClearTrackedMoveMessages(actualChatId, 1500);
                 // Формируем сообщение о ходе в новом формате
-                let moveMessage = '🎮 На столе:\n';
+                let moveMessage = localize('state.table');
                 updatedState.tableCards.forEach(tableCard => {
                     if (!tableCard) return; // Пропускаем, если карта не определена
                     
@@ -2535,13 +2511,13 @@ bot.on(['sticker', 'text'], async (ctx) => {
                     if (player) {
                         moveMessage += `${player.username}: ${tableCard.card.suit}${tableCard.card.rank}\n`;
                     } else {
-                        moveMessage += `Неизвестный игрок: ${tableCard.card.suit}${tableCard.card.rank}\n`;
+                        moveMessage += localize('state.unknownPlayerCard', { 0: tableCard.card.suit, 1: tableCard.card.rank });
                     }
                 });
 
                 // Добавляем информацию о следующем игроке
                 if (newCurrentPlayer) {
-                    moveMessage += `\n🎯 Сейчас ход: @${newCurrentPlayer.username}`;
+                    moveMessage += localize('state.currentTurn', { 0: newCurrentPlayer.username });
                     // Устанавливаем таймер для следующего игрока
                     setMoveTimer(actualChatId, newCurrentPlayer.id);
                 }
@@ -2549,7 +2525,7 @@ bot.on(['sticker', 'text'], async (ctx) => {
                 const sent = await ctx.reply(moveMessage, {
                   reply_markup: {
                       inline_keyboard: [[
-                          { text: 'Выбрать карту 🃏', switch_inline_query_current_chat: '' }
+                          { text: localize('game.chooseCard'), switch_inline_query_current_chat: '' }
                       ]]
                   }
                 });
@@ -2572,18 +2548,18 @@ bot.on(['sticker', 'text'], async (ctx) => {
             console.log(`[LOG] Не удалось определить карту по стикеру или тексту`);
             
             if ('sticker' in ctx.message) {
-                await ctx.reply('Этот стикер не распознан как карта. Используйте только стикеры карт, отправленные ботом.');
+                await ctx.reply(localize('move.unknownSticker'));
             }
             return;
         }
     } catch (error) {
         console.error('Ошибка при обработке сообщения:', error);
-        await ctx.reply('Произошла ошибка при обработке сообщения');
+        await ctx.reply(localize('move.error'));
     }
 });
 
 // Запускаем бота
-bot.launch().then(async () => {
+databaseReady.then(() => bot.launch()).then(async () => {
     console.log('Бот запущен!');
     
     // Восстанавливаем сохранённые игры (#6)
@@ -2613,19 +2589,10 @@ bot.command('inline_setup', async (ctx) => {
     try {
         const botInfo = await ctx.telegram.getMe();
         
-        await ctx.reply(`Инструкция по активации инлайн-режима для бота:
-
-1. Откройте чат с @BotFather в Telegram
-2. Отправьте команду /mybots
-3. Выберите вашего бота @${botInfo.username}
-4. Нажмите на "Bot Settings"
-5. Нажмите на "Inline Mode"
-6. Нажмите на "Turn on" и настройте параметры инлайн-режима
-7. В строке "Placeholder" напишите "Выберите карту для хода..."
-8. Перезапустите бота после настройки`);
+        await ctx.reply(localize('inline.setupInstructions', { 0: botInfo.username }));
     } catch (error) {
         console.error('Ошибка при выполнении команды inline_setup:', error);
-        await ctx.reply('Произошла ошибка при получении информации о боте');
+        await ctx.reply(localize('inline.setupError'));
     }
 });
 

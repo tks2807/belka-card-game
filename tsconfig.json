@@ -1,6 +1,7 @@
 /* To learn more about this file see: https://angular.io/config/tsconfig. */
 {
   "compileOnSave": false,
+  "ts-node": { "preferTsExts": true },
   "compilerOptions": {
     "target": "ES2020",
     "module": "commonjs",
@@ -8,6 +9,7 @@
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "baseUrl": "./",
     "forceConsistentCasingInFileNames": true,

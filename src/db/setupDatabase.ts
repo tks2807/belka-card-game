@@ -18,7 +18,16 @@ async function setupDatabase() {
     
     // Execute schema
     console.log('Executing schema SQL...');
-    await client.query(schema);
+    await client.query('BEGIN');
+    try {
+      await client.query(schema);
+      const titlesMigration = fs.readFileSync(path.join(__dirname, 'migrations', 'normalize_title_ids.sql'), 'utf8');
+      await client.query(titlesMigration);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
     
     console.log('Database schema setup completed!');
     return true;

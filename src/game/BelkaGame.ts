@@ -2,6 +2,7 @@ import { Card, Player, CardSuit, CardRank, TableCard, LastTrick } from '../types
 import { StatsService } from '../services/StatsService';
 import { MoveResult } from '../types/game.types';
 import * as crypto from 'crypto';
+import { Locale, translate } from '../i18n';
 
 // Перемещаем интерфейс GameState в отдельный файл types/game.types.ts
 // и расширяем его здесь для внутреннего использования
@@ -55,9 +56,11 @@ interface ExtendedGameState {
 export class BelkaGame {
     private state: ExtendedGameState;
     private statsService: StatsService;
+    private locale: Locale;
 
-    constructor(chatId: number) {
+    constructor(chatId: number, locale: Locale = 'ru') {
         this.statsService = new StatsService();
+        this.locale = locale;
         this.state = {
             players: [],
             currentPlayerIndex: 0,
@@ -99,6 +102,11 @@ export class BelkaGame {
             matchHistory: { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 }
         };
     }
+
+    public setLocale(locale: Locale): void {
+        this.locale = locale;
+    }
+
 
     private createDeck(): Card[] {
         const suits: CardSuit[] = ['♠', '♣', '♦', '♥'];
@@ -182,7 +190,7 @@ export class BelkaGame {
 
     public startGame(mode: 'belka' | 'walka' = 'belka'): string {
         if (this.state.isActive) {
-            return "Игра уже запущена!";
+            return translate(this.locale, 'game.alreadyStarted');
         }
 
         this.state.isActive = true;
@@ -324,13 +332,13 @@ export class BelkaGame {
     public async makeMove(playerId: number, cardIndex: number): Promise<MoveResult> {
         // Проверка, активна ли игра
         if (!this.state.isActive) {
-            return { success: false, message: "Игра неактивна" };
+            return { success: false, message: translate(this.locale, 'move.inactive') };
         }
 
         const playerIndex = this.state.players.findIndex(p => p.id === playerId);
 
         if (playerIndex === -1) {
-            return { success: false, message: 'Игрок не найден' };
+            return { success: false, message: translate(this.locale, 'move.playerNotFound') };
         }
 
         const player = this.state.players[playerIndex];
@@ -338,12 +346,12 @@ export class BelkaGame {
         if (playerIndex !== this.state.currentPlayerIndex) {
             return {
                 success: false,
-                message: `Сейчас не ваш ход! Ход игрока: ${this.state.players[this.state.currentPlayerIndex].username}`
+                message: translate(this.locale, 'move.notYourTurn', { 0: this.state.players[this.state.currentPlayerIndex].username })
             };
         }
 
         if (cardIndex < 0 || cardIndex >= player.cards.length) {
-            return { success: false, message: 'Некорректный номер карты' };
+            return { success: false, message: translate(this.locale, 'move.invalidCardIndex') };
         }
 
         const card = player.cards[cardIndex];
@@ -369,7 +377,7 @@ export class BelkaGame {
                     // Если у игрока есть козыри (включая вальтов), но он пытается ходить не козырем
                     return {
                         success: false,
-                        message: '❌ Нельзя так ходить.'
+                        message: translate(this.locale, 'move.illegal')
                     };
                 }
             } else {
@@ -384,7 +392,7 @@ export class BelkaGame {
                         // Если игрок пытается ходить другой мастью или валетом
                         return {
                             success: false,
-                            message: '❌ Нельзя так ходить.'
+                            message: translate(this.locale, 'move.illegal')
                         };
                     }
                 }
@@ -409,7 +417,7 @@ export class BelkaGame {
             ) {
                 return {
                     success: false,
-                    message: '❌ Нельзя так ходить.'
+                    message: translate(this.locale, 'move.illegal')
                 };
             }
         }
@@ -464,7 +472,7 @@ export class BelkaGame {
             this.state.currentPlayerIndex = (this.state.currentPlayerIndex + 1) % this.state.players.length;
             return {
                 success: true,
-                message: `Ход передан игроку ${this.state.players[this.state.currentPlayerIndex].username}`
+                message: translate(this.locale, 'move.nextPlayer', { 0: this.state.players[this.state.currentPlayerIndex].username })
             };
         }
     }
@@ -566,7 +574,7 @@ export class BelkaGame {
     }
 
     private createRoundSummary(): string {
-        let summary = '🃏 Карты на столе:\n';
+        let summary = translate(this.locale, 'game.table');
 
         // Показываем все карты на столе
         this.state.tableCards.forEach(tableCard => {
@@ -585,10 +593,10 @@ export class BelkaGame {
         if (nextPlayer) {
             // Если на столе уже все карты, показываем, кто забирает взятку
             if (this.state.tableCards.length === this.state.players.length) {
-                summary += `\n🏆 Взятку забирает: ${nextPlayer.username}`;
+                summary += translate(this.locale, 'game.trickWinner', { 0: nextPlayer.username });
             }
             // В любом случае показываем, чей следующий ход
-            summary += `\n🎯 Следующий ход: @${nextPlayer.username}`;
+            summary += translate(this.locale, 'game.nextTurn', { 0: nextPlayer.username });
         }
 
         return summary;
@@ -906,12 +914,12 @@ export class BelkaGame {
         // Проверка на "голую" (все взятки + 120 очков)
         if (this.state.teams.team1.score === 120 && this.state.teams.team2.tricks === 0) {
             const eloSummary = await this.endGame(true, 1);
-            return "🏆 Команда 1 выиграла 'голую'! Игра окончена!" + eloSummary;
+            return translate(this.locale, 'game.team1Golden') + eloSummary;
         }
 
         if (this.state.teams.team2.score === 120 && this.state.teams.team1.tricks === 0) {
             const eloSummary = await this.endGame(true, 2);
-            return "🏆 Команда 2 выиграла 'голую'! Игра окончена!" + eloSummary;
+            return translate(this.locale, 'game.team2Golden') + eloSummary;
         }
 
         // Проверка на "яйца" (по 60 очков)
@@ -993,7 +1001,7 @@ export class BelkaGame {
             
             // Добавляем сводку состояния игры после переигровки "яиц"
             const summary = this.getGameSummary();
-            return "🥚 Яйца! Обе команды набрали по 60 очков. Раунд будет переигран, победившая команда получит 4 очка.\n\n" + summary;
+            return translate(this.locale, 'game.eggs') + summary;
         }
 
         // Проверка, является ли этот раунд переигровкой после "яиц"
@@ -1057,18 +1065,18 @@ export class BelkaGame {
         this.state.matchHistory.maxDeficitTeam2 = Math.max(this.state.matchHistory.maxDeficitTeam2, this.state.teams.team1.eyes - this.state.teams.team2.eyes);
 
         // Формируем сообщение с результатами раунда
-        let results = `📊 Результаты раунда ${this.state.currentRound}:\n\n`;
+        let results = translate(this.locale, 'round.results', { 0: this.state.currentRound });
 
         // Добавляем информацию о победителе раунда
         if (team1Won) {
-            results += `🏆 Победитель раунда: Команда 1\n\n`;
+            results += translate(this.locale, 'round.team1Winner');
         } else if (team2Won) {
-            results += `🏆 Победитель раунда: Команда 2\n\n`;
+            results += translate(this.locale, 'round.team2Winner');
         } else if (isTie) {
-            results += `🥚 Ничья (Яйца)! Обе команды набрали по ${this.state.teams.team1.score} очков.\n\n`;
+            results += translate(this.locale, 'round.tie', { 0: this.state.teams.team1.score });
         }
 
-        results += `👥 Команда 1:\n`;
+        results += translate(this.locale, 'state.team1');
         // Список игроков команды 1
         this.state.teams.team1.players.forEach(player => {
             let playerName = player.username;
@@ -1090,25 +1098,25 @@ export class BelkaGame {
             results += `- ${playerName}\n`;
         });
 
-        results += `💯 Очки в раунде: ${this.state.teams.team1.score}\n`;
-        results += `👑 Взятки: ${this.state.teams.team1.tricks}\n`;
+        results += translate(this.locale, 'round.score', { 0: this.state.teams.team1.score });
+        results += translate(this.locale, 'round.tricks', { 0: this.state.teams.team1.tricks });
 
         // Добавляем информацию о глазах
         if (isEggsTiebreaker && team1Won) {
-            results += `👁️ Глаза в этом раунде: +${team1Eyes}\n`;
+            results += translate(this.locale, 'round.eyes', { 0: team1Eyes });
         } else if (this.state.currentRound === 1 && team1Won) {
-            results += `👁️ Глаза в этом раунде: +${team1Eyes} (первый раунд)\n`;
+            results += translate(this.locale, 'round.firstRoundEyes', { 0: team1Eyes });
         } else if (this.state.currentRound > 1 && this.state.clubJackHolder &&
             !this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) &&
             team1Won) {
-            results += `👁️ Глаза в этом раунде: +${team1Eyes} (включая +1 за валета крести у соперников)\n`;
+            results += translate(this.locale, 'round.clubJackBonus', { 0: team1Eyes });
         } else {
-            results += `👁️ Глаза в этом раунде: +${team1Eyes}\n`;
+            results += translate(this.locale, 'round.eyes', { 0: team1Eyes });
         }
 
-        results += `👁️ Всего глаз: ${this.state.teams.team1.eyes}\n\n`;
+        results += translate(this.locale, 'round.totalEyesSpacing', { 0: this.state.teams.team1.eyes });
 
-        results += `👥 Команда 2:\n`;
+        results += translate(this.locale, 'state.team2');
         // Список игроков команды 2
         this.state.teams.team2.players.forEach(player => {
             let playerName = player.username;
@@ -1130,23 +1138,23 @@ export class BelkaGame {
             results += `- ${playerName}\n`;
         });
 
-        results += `💯 Очки в раунде: ${this.state.teams.team2.score}\n`;
-        results += `👑 Взятки: ${this.state.teams.team2.tricks}\n`;
+        results += translate(this.locale, 'round.score', { 0: this.state.teams.team2.score });
+        results += translate(this.locale, 'round.tricks', { 0: this.state.teams.team2.tricks });
 
         // Добавляем информацию о глазах
         if (isEggsTiebreaker && team2Won) {
-            results += `👁️ Глаза в этом раунде: +${team2Eyes}\n`;
+            results += translate(this.locale, 'round.eyes', { 0: team2Eyes });
         } else if (this.state.currentRound === 1 && team2Won) {
-            results += `👁️ Глаза в этом раунде: +${team2Eyes} (первый раунд)\n`;
+            results += translate(this.locale, 'round.firstRoundEyes', { 0: team2Eyes });
         } else if (this.state.currentRound > 1 && this.state.clubJackHolder &&
             this.state.teams.team1.players.some(p => p.id === this.state.clubJackHolder!.id) &&
             team2Won) {
-            results += `👁️ Глаза в этом раунде: +${team2Eyes} (включая +1 за валета крести у соперников)\n`;
+            results += translate(this.locale, 'round.clubJackBonus', { 0: team2Eyes });
         } else {
-            results += `👁️ Глаза в этом раунде: +${team2Eyes}\n`;
+            results += translate(this.locale, 'round.eyes', { 0: team2Eyes });
         }
 
-        results += `👁️ Всего глаз: ${this.state.teams.team2.eyes}\n`;
+        results += translate(this.locale, 'round.totalEyes', { 0: this.state.teams.team2.eyes });
 
         // Определяем необходимое количество глаз для победы в зависимости от режима игры
         const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
@@ -1154,14 +1162,14 @@ export class BelkaGame {
         // Проверка на победу по глазам
         if (this.state.teams.team1.eyes >= eyesToWin) {
             const eloSummary = await this.endGame(false, 1);
-            results += `\n🏆🏆🏆 Команда 1 набрала ${this.state.teams.team1.eyes} глаз (требуется ${eyesToWin})! Игра окончена!` + eloSummary;
+            results += translate(this.locale, 'match.team1Won', { 0: this.state.teams.team1.eyes, 1: eyesToWin }) + eloSummary;
         } else if (this.state.teams.team2.eyes >= eyesToWin) {
             const eloSummary = await this.endGame(false, 2);
-            results += `\n🏆🏆🏆 Команда 2 набрала ${this.state.teams.team2.eyes} глаз (требуется ${eyesToWin})! Игра окончена!` + eloSummary;
+            results += translate(this.locale, 'match.team2Won', { 0: this.state.teams.team2.eyes, 1: eyesToWin }) + eloSummary;
         } else {
             // Если никто не выиграл, начинаем новый раунд
             this.startNewRound();
-            results += `\n🃏 Начинается раунд ${this.state.currentRound}!\n\n`;
+            results += translate(this.locale, 'round.nextRound', { 0: this.state.currentRound });
 
             // Добавляем информацию о новом раунде из getGameSummary()
             const newRoundSummary = this.getGameSummary();
@@ -1175,18 +1183,18 @@ export class BelkaGame {
         const history = this.state.matchHistory;
         const winner = winningTeam === 1 ? this.state.teams.team1 : this.state.teams.team2;
         const loser = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
-        let summary = `\n\n📜 Итоги матча\n👁️ Счёт: ${winner.eyes}:${loser.eyes}${isGolden ? ' • голая' : ''}\n`;
+        let summary = translate(this.locale, 'match.summary', { 0: winner.eyes, 1: loser.eyes, 2: isGolden ? translate(this.locale, 'match.goldenSuffix') : '' });
         if (history.highestTrick) {
             const player = this.state.players.find(item => item.id === history.highestTrick!.playerId);
-            summary += `💰 Самая дорогая взятка: ${history.highestTrick.points} очков — @${player?.username || 'игрок'}\n`;
+            summary += translate(this.locale, 'match.highestTrick', { 0: history.highestTrick.points, 1: player?.username || translate(this.locale, 'game.playerFallback') });
         }
         const topCutter = Object.entries(history.cuts).sort((a, b) => b[1] - a[1])[0];
         if (topCutter) {
             const player = this.state.players.find(item => item.id === Number(topCutter[0]));
-            summary += `🗡️ Больше всех срезов: @${player?.username || 'игрок'} — ${topCutter[1]}\n`;
+            summary += translate(this.locale, 'match.topCutter', { 0: player?.username || translate(this.locale, 'game.playerFallback'), 1: topCutter[1] });
         }
         const comeback = winningTeam === 1 ? history.maxDeficitTeam1 : history.maxDeficitTeam2;
-        if (comeback >= 3) summary += `🔥 Камбэк: команда ${winningTeam} отыгралась с отставания в ${comeback} глаз\n`;
+        if (comeback >= 3) summary += translate(this.locale, 'match.comeback', { 0: winningTeam, 1: comeback });
         return summary;
     }
 
@@ -1243,15 +1251,15 @@ export class BelkaGame {
         // Показываем видимый RP-ранг; ELO остаётся внутренним рейтингом подбора.
         const rankName = (tier: number) => {
             const rank = this.statsService.getRankByRP(tier);
-            return `${rank.icon} ${rank.name}`;
+            return `${rank.icon} ${this.locale === 'kk' ? rank.nameKz : rank.name}`;
         };
-        let eloSummary = '\n\n📊 Изменения ранга:\n';
-        eloSummary += '🏆 Победители:\n';
+        let eloSummary = translate(this.locale, 'match.rankChanges');
+        eloSummary += translate(this.locale, 'match.winners');
         for (const c of winnerEloChanges) {
             const sign = c.rankPointDelta >= 0 ? '+' : '';
             eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta})\n`;
         }
-        eloSummary += '💀 Проигравшие:\n';
+        eloSummary += translate(this.locale, 'match.losers');
         for (const c of loserEloChanges) {
             const sign = c.rankPointDelta >= 0 ? '+' : '';
             eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta})\n`;
@@ -1269,18 +1277,18 @@ export class BelkaGame {
         const lastTrick = this.state.lastTrick;
 
         if (!lastTrick || lastTrick.cards.length === 0) {
-            return 'Последней взятки пока нет.';
+            return translate(this.locale, 'game.noLastTrick');
         }
 
-        let summary = '🃏 Карты на столе:\n';
+        let summary = translate(this.locale, 'game.lastTrickTable');
         for (const tableCard of lastTrick.cards) {
             const player = this.state.players.find(p => p.id === tableCard.playerId);
-            const username = player?.username || 'Неизвестный игрок';
+            const username = player?.username || translate(this.locale, 'game.unknownPlayer');
             summary += `${username}: ${this.formatCardForMessage(tableCard.card)}\n`;
         }
 
         const winner = this.state.players.find(p => p.id === lastTrick.winnerId);
-        summary += `\n🏆 Взятку забрал: ${winner?.username || 'Неизвестный игрок'}`;
+        summary += `\n🏆 ${translate(this.locale, 'game.lastTrickWinner')}: ${winner?.username || translate(this.locale, 'game.lastTrickUnknownPlayer')}`;
 
         return summary;
     }
@@ -1319,27 +1327,27 @@ export class BelkaGame {
     public getGameSummary(): string {
         // Определяем необходимое количество глаз для победы в зависимости от режима игры
         const eyesToWin = this.state.gameMode === 'belka' ? 12 : 6;
-        const gameModeName = this.state.gameMode === 'belka' ? 'Белка' : 'Шалқа';
+        const gameModeName = this.state.gameMode === 'belka' ? translate(this.locale, 'mode.belka') : translate(this.locale, 'mode.walka');
 
-        let summary = `🎮 Режим игры: ${gameModeName} (до ${eyesToWin} глаз)\n`;
-        summary += `🃏 Раунд ${this.state.currentRound}`;
+        let summary = translate(this.locale, 'game.mode', { 0: gameModeName, 1: eyesToWin });
+        summary += translate(this.locale, 'game.roundNumber', { 0: this.state.currentRound });
         
         // Добавляем информацию, что раунд переигрывается из-за "яиц"
         if (this.state.eggsTiebreaker) {
-            summary += ` (переигровка после "яиц" - победитель получит 4 глаза!)`;
+            summary += translate(this.locale, 'game.eggsReplay');
         }
         
-        summary += `\n♠️♣️♦️♥️ Козырь: ${this.state.trump}`;
+        summary += translate(this.locale, 'game.trump', { 0: this.state.trump });
 
         // Показываем информацию о держателе валета крести только после первого раунда
         if (this.state.clubJackHolder && !this.state.hideClubJackHolder) {
-            summary += ` (определен игроком ${this.state.clubJackHolder.username})`;
+            summary += translate(this.locale, 'state.trumpHolder', { 0: this.state.clubJackHolder.username });
         }
 
         summary += `\n\n`;
 
         // Информация о командах
-        summary += '👥 Команда 1:\n';
+        summary += translate(this.locale, 'game.team1');
         this.state.teams.team1.players.forEach(player => {
             let playerName = player.username;
 
@@ -1361,9 +1369,9 @@ export class BelkaGame {
         });
 
         // Добавляем отступ между списком игроков и информацией о глазах
-        summary += `\n👁️ Глаза: ${this.state.teams.team1.eyes}/${eyesToWin}\n\n`;
+        summary += translate(this.locale, 'game.team1Eyes', { 0: this.state.teams.team1.eyes, 1: eyesToWin });
 
-        summary += '👥 Команда 2:\n';
+        summary += translate(this.locale, 'game.team2');
         this.state.teams.team2.players.forEach(player => {
             let playerName = player.username;
 
@@ -1385,12 +1393,12 @@ export class BelkaGame {
         });
 
         // Добавляем отступ между списком игроков и информацией о глазах
-        summary += `\n👁️ Глаза: ${this.state.teams.team2.eyes}/${eyesToWin}\n`;
+        summary += translate(this.locale, 'game.team2Eyes', { 0: this.state.teams.team2.eyes, 1: eyesToWin });
 
         // Добавляем информацию о том, чей первый ход
         const currentPlayer = this.state.players[this.state.currentPlayerIndex];
         if (currentPlayer) {
-            summary += `\n🎯 Первый ход: @${currentPlayer.username}`;
+            summary += translate(this.locale, 'game.firstTurn', { 0: currentPlayer.username });
         }
 
         return summary;
@@ -1554,7 +1562,7 @@ export class BelkaGame {
         chatId: number,
     ): { success: boolean; message: string } {
         if (this.state.isActive) {
-            return { success: false, message: 'Обмен местами доступен только до начала игры' };
+            return { success: false, message: translate(this.locale, 'swap.beforeStart') };
         }
         const { id: id1, username: username1 } = firstPlayerData;
         const { id: id2, username: username2 } = secondPlayerData;
@@ -1603,7 +1611,7 @@ export class BelkaGame {
                 this.sortPlayerHand(player.cards);
             }
 
-            return { success: true, message: `Игроки @${username1} и @${username2} поменялись местами.` };
+            return { success: true, message: translate(this.locale, 'swap.playersSwapped', { 0: username1, 1: username2 }) };
         }
 
         // Если только первый игрок за столом — заменяем его на второго (нового)
@@ -1634,7 +1642,7 @@ export class BelkaGame {
             
             this.determineNewTrump(); // Определяем козырь заново
 
-            return { success: true, message: `Игрок @${username1} заменён на @${username2}.` };
+            return { success: true, message: translate(this.locale, 'swap.playerReplaced', { 0: username1, 1: username2 }) };
         }
 
         // Если только второй игрок за столом — заменяем его на первого (нового)
@@ -1665,10 +1673,10 @@ export class BelkaGame {
 
             this.determineNewTrump(); // Определяем козырь заново
 
-            return { success: true, message: `Игрок @${username2} заменён на @${username1}.` };
+            return { success: true, message: translate(this.locale, 'swap.playerReplaced', { 0: username2, 1: username1 }) };
         }
 
         // Если ни один не за столом — ничего не делаем
-        return { success: false, message: 'Оба игрока не участвуют в игре' };
+        return { success: false, message: translate(this.locale, 'swap.neitherPlaying') };
     }
 } 
