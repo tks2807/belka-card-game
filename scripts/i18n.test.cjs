@@ -171,7 +171,7 @@ test('Telegram handlers: any member switches chat language, menu, commands, titl
   }
   const methods = {
     async getLeaderboardAllImproved() { return Array.from({ length: 5 }, (_, i) => [i + 1, { username: 'tester', isQualified: true, eloRating: 1000, seasonGamesPlayed: 5, seasonGamesWon: 3 }]); },
-    async getLeaderboardChatImproved() { return Array.from({ length: 5 }, (_, i) => [i + 1, { username: 'tester', isQualified: true, eloRating: 1000, rank: this.getRankByRP(1), rankPoints: 25 }]); },
+    async getLeaderboardChatImproved() { return Array.from({ length: 5 }, (_, i) => [i + 1, { username: 'tester', isQualified: true, eloRating: 1000, rank: this.getRankByELO(1000), rankPoints: 25 }]); },
     async getPlayerChatELO() { return 1000; },
     async getPlayerChatRank() { return { tier: 1, points: 25 }; },
     async getLeaderboardAlltime() { return [{ username: 'tester', games_played: 10, games_won: 5, golaya_count: 1, eggs_count: 1, total_tricks: 40 }]; },
@@ -267,4 +267,20 @@ test('in-flight locale read cannot overwrite a completed language switch', async
     assert.equal(await pending, 'kk');
     assert.equal(await service.get(-401), 'kk');
   } finally { fakePool.query = original; }
+});
+
+test('ELO rank boundaries, promotion, demotion and maximum progress', () => {
+  const { StatsService } = require('../dist/services/StatsService');
+  const service = new StatsService();
+  const ranks = service.getAllRanks();
+  for (let i = 0; i < ranks.length; i++) {
+    const rank = ranks[i];
+    assert.equal(service.getRankByELO(rank.min).tier, i);
+    assert.equal(service.getRankByELO(rank.max).tier, i);
+    if (i > 0) assert.equal(service.getRankByELO(rank.min - 1).tier, i - 1);
+  }
+  assert.equal(service.getRankByELO(1000).name, 'Батыр');
+  assert.equal(service.getRankProgress(1100).eloToNext, 100);
+  assert.equal(service.getRankProgress(9999).next, null);
+  assert.equal(service.getRankProgress(9999).progress, 100);
 });

@@ -1204,8 +1204,8 @@ export class BelkaGame {
         const losingTeamData = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
 
         // ELO change results for summary (#12)
-        const winnerEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number; oldRankTier: number; oldRankPoints: number; newRankTier: number; newRankPoints: number; rankPointDelta: number }> = [];
-        const loserEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number; oldRankTier: number; oldRankPoints: number; newRankTier: number; newRankPoints: number; rankPointDelta: number }> = [];
+        const winnerEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number }> = [];
+        const loserEloChanges: Array<{ username: string; oldElo: number; newElo: number; delta: number; gamesPlayed: number }> = [];
 
         try {
             // Рейтинг считается один раз для обеих пар из одного снимка до
@@ -1245,21 +1245,21 @@ export class BelkaGame {
             return '';
         }
 
-        // Показываем RP-ранг, изменение RP и обновлённый ELO.
-        const rankName = (tier: number) => {
-            const rank = this.statsService.getRankByRP(tier);
+        // Показываем звание и изменение ELO.
+        const rankName = (elo: number) => {
+            const rank = this.statsService.getRankByELO(elo);
             return `${rank.icon} ${this.locale === 'kk' ? rank.nameKz : rank.name}`;
         };
         let eloSummary = translate(this.locale, 'match.rankChanges');
         eloSummary += translate(this.locale, 'match.winners');
         for (const c of winnerEloChanges) {
-            const sign = c.rankPointDelta >= 0 ? '+' : '';
-            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta}; ELO: ${c.newElo})\n`;
+            const sign = c.delta >= 0 ? '+' : '';
+            eloSummary += `• @${c.username}: ${rankName(c.newElo)} · ELO ${c.newElo} (${sign}${c.delta})\n`;
         }
         eloSummary += translate(this.locale, 'match.losers');
         for (const c of loserEloChanges) {
-            const sign = c.rankPointDelta >= 0 ? '+' : '';
-            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta}; ELO: ${c.newElo})\n`;
+            const sign = c.delta >= 0 ? '+' : '';
+            eloSummary += `• @${c.username}: ${rankName(c.newElo)} · ELO ${c.newElo} (${sign}${c.delta})\n`;
         }
         return eloSummary + this.getMatchHistorySummary(winningTeam, isGolden);
     }

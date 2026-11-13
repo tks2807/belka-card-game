@@ -1209,13 +1209,13 @@ async function sendLeaderboardChatImproved(ctx: any, chatId: number, offset = 0,
     if (s.isQualified) {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
         localize('rating.elo', { 0: s.eloRating }) +
-        localize('rating.rank', { 0: s.rank.icon, 1: (currentLocale() === 'kk' ? s.rank.nameKz : s.rank.name), 2: (s as any).rankPoints }) +
+        localize('rating.rank', { 0: s.rank.icon, 1: (currentLocale() === 'kk' ? s.rank.nameKz : s.rank.name) }) +
         localize('rating.seasonGames', { 0: seasonGamesPlayedC, 1: seasonGamesWonC }) +
         localize('rating.specialWins', { 0: seasonGolayaCountC, 1: seasonEggsCountC });
     } else {
       message += `*${position}. ${s.username}* ${statusIcon}\n` +
         localize('rating.calibration', { 0: s.eloRating, 1: seasonGamesPlayedC }) +
-        localize('rating.rank', { 0: s.rank.icon, 1: (currentLocale() === 'kk' ? s.rank.nameKz : s.rank.name), 2: (s as any).rankPoints }) +
+        localize('rating.rank', { 0: s.rank.icon, 1: (currentLocale() === 'kk' ? s.rank.nameKz : s.rank.name) }) +
         localize('rating.seasonGames', { 0: seasonGamesPlayedC, 1: seasonGamesWonC }) +
         localize('rating.specialWins', { 0: seasonGolayaCountC, 1: seasonEggsCountC });
     }
@@ -1678,7 +1678,7 @@ bot.command('ranks', async (ctx) => {
     
     allRanks.forEach((rank) => {
         message += `${rank.icon} **${locale === 'kk' ? rank.nameKz : rank.name}**\n`;
-        message += t(locale, 'rankLine', { current: rank.tier + 1, total: allRanks.length, description: metadataText(rank.description, locale) });
+        message += t(locale, 'rankLine', { current: rank.min, total: rank.max, description: metadataText(rank.description, locale) });
     });
     
     message += t(locale, 'rankTip');
@@ -1706,15 +1706,13 @@ bot.command('myrank', async (ctx) => {
     const locale = await localeService.get(chatManager.getActualChatId(chatId));
     
     const playerELO = await statsService.getPlayerChatELO(userId, chatId);
-    const playerRank = await statsService.getPlayerChatRank(userId, chatId);
     const features = await statsService.getChatFeatures(userId, chatId);
-    const rank = statsService.getRankByRP(playerRank.tier);
-    const progress = statsService.getRankProgress(playerRank.tier, playerRank.points);
+    const rank = statsService.getRankByELO(playerELO);
+    const progress = statsService.getRankProgress(playerELO);
     
     let message = t(locale, 'myRankHeader', { username });
     message += `${rank.icon} **${locale === 'kk' ? rank.nameKz : rank.name}**\n`;
     message += `⚔️ ELO: ${playerELO}\n`;
-    message += `📊 ${playerRank.points}/100 RP\n`;
     message += t(locale, 'streak', { current: features.winStreak, best: features.bestWinStreak });
     if (features.activeTitle) message += localize('rank.activeTitle', { 0: titleName(features.activeTitle) });
     message += `📝 ${metadataText(rank.description, locale)}\n\n`;
@@ -1723,7 +1721,7 @@ bot.command('myrank', async (ctx) => {
         const progressBar = '▓'.repeat(Math.floor(progress.progress / 10)) + '░'.repeat(10 - Math.floor(progress.progress / 10));
         message += t(locale, 'rankProgress', { rank: locale === 'kk' ? progress.next.nameKz : progress.next.name }) + '\n';
         message += `${progressBar} ${progress.progress}%\n`;
-        message += t(locale, 'rankNeeded', { points: progress.rpToNext }) + '\n\n';
+        message += t(locale, 'rankNeeded', { points: progress.eloToNext }) + '\n\n';
     } else {
         message += t(locale, 'rankMax') + '\n\n';
     }
