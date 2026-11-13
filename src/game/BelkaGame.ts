@@ -1245,7 +1245,7 @@ export class BelkaGame {
             return '';
         }
 
-        // Показываем видимый RP-ранг; ELO остаётся внутренним рейтингом подбора.
+        // Показываем RP-ранг, изменение RP и обновлённый ELO.
         const rankName = (tier: number) => {
             const rank = this.statsService.getRankByRP(tier);
             return `${rank.icon} ${this.locale === 'kk' ? rank.nameKz : rank.name}`;
@@ -1254,12 +1254,12 @@ export class BelkaGame {
         eloSummary += translate(this.locale, 'match.winners');
         for (const c of winnerEloChanges) {
             const sign = c.rankPointDelta >= 0 ? '+' : '';
-            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta})\n`;
+            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta}; ELO: ${c.newElo})\n`;
         }
         eloSummary += translate(this.locale, 'match.losers');
         for (const c of loserEloChanges) {
             const sign = c.rankPointDelta >= 0 ? '+' : '';
-            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta})\n`;
+            eloSummary += `• @${c.username}: ${rankName(c.newRankTier)} · ${c.newRankPoints}/100 RP (${sign}${c.rankPointDelta}; ELO: ${c.newElo})\n`;
         }
         return eloSummary + this.getMatchHistorySummary(winningTeam, isGolden);
     }
