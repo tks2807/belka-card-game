@@ -391,7 +391,6 @@ bot.telegram.setMyCommands([
     { command: 'swapcancel', description: 'Отменить ожидание обмена (может только инициатор)' },
     { command: 'ratingall', description: 'Глобальный рейтинг игроков' },
     { command: 'ratingchat', description: 'Рейтинг игроков (этот чат)' },
-    { command: 'endgame', description: 'Проголосовать за завершение игры' },
     { command: 'clearbot', description: 'Сбросить игру' },
     { command: 'warmuty', description: 'Показать благодарности участникам проекта' },
     { command: 'ranks', description: 'Показать систему рангов' },
@@ -575,7 +574,6 @@ bot.help(async (ctx) => {
 /myrank - Мой персональный ранг
 image.png
 🎮 Управление игрой:
-/endgame - Проголосовать за завершение игры
 /clearbot - Сбросить текущую игру (в случае проблем)
 /warmuty - Показать благодарности участникам проекта
 
@@ -1299,69 +1297,6 @@ function findOptimalCardForAutoMove(player, gameState) {
 //     await safeSendMessage(ctx, 'Произошла ошибка при работе с таймером');
 //   }
 // });
-// Обработчик команды /endgame
-bot.command('endgame', async (ctx) => {
-    try {
-        const chatId = ctx.chat?.id;
-        const userId = ctx.from?.id;
-        if (!chatId || !userId)
-            return;
-        // Используем ChatManager для получения актуального ID чата
-        const actualChatId = ChatManager_1.chatManager.getActualChatId(chatId);
-        // Проверяем, есть ли уже игра с актуальным ID чата
-        let game = games.get(actualChatId);
-        // Если игры нет с актуальным ID, проверяем старый ID
-        if (!game && chatId !== actualChatId) {
-            game = games.get(chatId);
-            if (game) {
-                // Если нашли игру со старым ID, переносим её на новый
-                games.set(actualChatId, game);
-                games.delete(chatId);
-                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
-            }
-        }
-        if (!game) {
-            await ctx.reply('Игра не найдена');
-            return;
-        }
-        // Голосуем за завершение игры
-        const result = game.voteForEnd(userId);
-        switch (result.status) {
-            case 'not_player':
-                await ctx.reply('Вы не являетесь участником игры или игра не активна');
-                break;
-            case 'already_voted':
-                await ctx.reply('Вы уже проголосовали за завершение игры');
-                break;
-            case 'voted':
-                const votesCount = result.votesCount || 0;
-                const requiredVotes = result.requiredVotes || 0;
-                await ctx.reply(`Игрок @${ctx.from.username} проголосовал за завершение игры. Голосов: ${votesCount}/${requiredVotes}`);
-                // Проверяем, достаточно ли голосов для завершения игры
-                if (votesCount >= requiredVotes) {
-                    // Игра успешно завершена, очищаем карты всех игроков
-                    const gameState = game.getGameState();
-                    gameState.players.forEach(player => {
-                        playerCardsInPrivateChat.delete(player.id);
-                    });
-                    console.log(`[LOG] Хранилище карт очищено для всех игроков после завершения игры в чате ${actualChatId}`);
-                    // Удаляем игру из хранилища
-                    games.delete(actualChatId);
-                    // Очищаем таймеры для этого чата
-                    clearMoveTimer(actualChatId);
-                    console.log(`[TIMER] Таймеры очищены после завершения игры голосованием в чате ${actualChatId}`);
-                    await ctx.reply('Игра завершена по голосованию игроков. Используйте /join, чтобы начать новую игру.');
-                }
-                break;
-            default:
-                await ctx.reply('Не удалось проголосовать за завершение игры');
-        }
-    }
-    catch (error) {
-        console.error('Ошибка в команде /endgame:', error);
-        await ctx.reply('Произошла ошибка при обработке команды');
-    }
-});
 // Обработчик команды /clearbot
 bot.command('clearbot', async (ctx) => {
     try {
@@ -1431,7 +1366,6 @@ bot.command('help', (ctx) => {
 /startbelka - Начать игру Белка (до 12 глаз)
 /startwalka - Начать игру Шалқа (до 6 глаз) 
 /join - Присоединиться к игре
-/endgame - Проголосовать за завершение игры
 /clearbot - Сбросить игру
 
 📊 *Статистика и рейтинг:*

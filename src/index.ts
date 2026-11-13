@@ -536,7 +536,6 @@ function commandsFor(locale: Locale) {
     { command: 'ratingchat', description: translate(locale, 'menu.ratingchat') },
     { command: 'alltime', description: translate(locale, 'menu.alltime') },
     { command: 'history', description: translate(locale, 'menu.history') },
-    { command: 'endgame', description: translate(locale, 'menu.endgame') },
     { command: 'giveup', description: translate(locale, 'menu.giveup') },
     { command: 'clearbot', description: translate(locale, 'menu.clearbot') },
     { command: 'warmuty', description: translate(locale, 'menu.warmuty') },
@@ -1559,80 +1558,6 @@ function findOptimalCardForAutoMove(player: Player, gameState: GameState): numbe
 //     await safeSendMessage(ctx, 'Произошла ошибка при работе с таймером');
 //   }
 // });
-
-// Обработчик команды /endgame
-bot.command('endgame', async (ctx) => {
-    try {
-        const chatId = ctx.chat?.id;
-        const userId = ctx.from?.id;
-        if (!chatId || !userId) return;
-
-        // Используем ChatManager для получения актуального ID чата
-        const actualChatId = chatManager.getActualChatId(chatId);
-
-        // Проверяем, есть ли уже игра с актуальным ID чата
-        let game = games.get(actualChatId);
-        
-        // Если игры нет с актуальным ID, проверяем старый ID
-        if (!game && chatId !== actualChatId) {
-            game = games.get(chatId);
-            if (game) {
-                // Если нашли игру со старым ID, переносим её на новый
-                games.set(actualChatId, game);
-                games.delete(chatId);
-                console.log(`[MIGRATION] Игра перенесена со старого ID ${chatId} на новый ${actualChatId}`);
-            }
-        }
-
-        if (!game) {
-            await ctx.reply(localize('error.noGame'));
-            return;
-        }
-
-        // Голосуем за завершение игры
-        const result = game.voteForEnd(userId);
-
-        switch (result.status) {
-            case 'not_player':
-                await ctx.reply(localize('endgame.notPlayer'));
-                break;
-            case 'already_voted':
-                await ctx.reply(localize('endgame.alreadyVoted'));
-                break;
-            case 'voted':
-                const votesCount = result.votesCount || 0;
-                const requiredVotes = result.requiredVotes || 0;
-                
-                await ctx.reply(localize('endgame.vote', { 0: ctx.from.username, 1: votesCount, 2: requiredVotes }));
-                
-                // Проверяем, достаточно ли голосов для завершения игры
-                if (votesCount >= requiredVotes) {
-                    // Игра успешно завершена, очищаем карты всех игроков
-                    const gameState = game.getGameState();
-                    gameState.players.forEach(player => {
-                        playerCardsInPrivateChat.delete(player.id);
-                    });
-                    
-                    console.log(`[LOG] Хранилище карт очищено для всех игроков после завершения игры в чате ${actualChatId}`);
-                    
-                    // Удаляем игру из хранилища
-                    games.delete(actualChatId);
-                    
-                    // Очищаем таймеры для этого чата
-                    clearMoveTimer(actualChatId);
-                    console.log(`[TIMER] Таймеры очищены после завершения игры голосованием в чате ${actualChatId}`);
-                    
-                    await ctx.reply(localize('endgame.cancelled'));
-                }
-                break;
-            default:
-                await ctx.reply(localize('endgame.voteFailed'));
-        }
-    } catch (error) {
-        console.error('Ошибка в команде /endgame:', error);
-        await ctx.reply(localize('error.commandFailed'));
-    }
-});
 
 // Сдача засчитывается только при подтверждении обоих игроков одной команды.
 bot.command('giveup', async (ctx) => {

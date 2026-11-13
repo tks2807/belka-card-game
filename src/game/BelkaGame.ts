@@ -17,7 +17,6 @@ interface ExtendedGameState {
     currentRound: number;
     trickWinner: Player | null;
     chatId: number;
-    endVotes: Set<number>;
     giveUpVotes: Set<number>;
     teams: {
         team1: {
@@ -72,7 +71,6 @@ export class BelkaGame {
             currentRound: 1,
             trickWinner: null,
             chatId: chatId,
-            endVotes: new Set(),
             giveUpVotes: new Set(),
             teams: {
                 team1: {
@@ -211,7 +209,6 @@ export class BelkaGame {
         this.state.eggsTiebreaker = false;
         this.state.startedSuits = [];
         this.state.hideClubJackHolder = true;
-        this.state.endVotes.clear();
         this.state.giveUpVotes.clear();
         this.state.matchHistory = { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 };
         this.state.playerSuitMap.clear();
@@ -1267,9 +1264,9 @@ export class BelkaGame {
         return eloSummary + this.getMatchHistorySummary(winningTeam, isGolden);
     }
 
-    public getGameState(): Omit<ExtendedGameState, 'endVotes' | 'giveUpVotes'> {
+    public getGameState(): Omit<ExtendedGameState, 'giveUpVotes'> {
         // Возвращаем состояние игры без внутренних полей
-        const { endVotes, giveUpVotes, ...gameState } = this.state;
+        const { giveUpVotes, ...gameState } = this.state;
         return gameState;
     }
 
@@ -1297,11 +1294,10 @@ export class BelkaGame {
 
     // Serialize game state to JSON-safe object
     public getSerializableState(): object {
-        const { endVotes, giveUpVotes, playerSuitMap, ...rest } = this.state;
+        const { giveUpVotes, playerSuitMap, ...rest } = this.state;
         return {
             ...rest,
             playerSuitMap: Array.from(playerSuitMap.entries()),
-            endVotes: Array.from(endVotes),
             giveUpVotes: Array.from(giveUpVotes)
         };
     }
@@ -1311,15 +1307,14 @@ export class BelkaGame {
         const playerSuitMap = new Map<number, CardSuit>(
             (data.playerSuitMap || []).map(([k, v]: [any, any]) => [Number(k), v as CardSuit])
         );
-        const endVotes = new Set<number>(data.endVotes || []);
         const giveUpVotes = new Set<number>(data.giveUpVotes || []);
+        const { endVotes: _legacyEndVotes, ...restoredData } = data;
         this.state = {
-            ...data,
+            ...restoredData,
             lastTrick: data.lastTrick || null,
             matchHistory: data.matchHistory || { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 },
             startedSuits: data.startedSuits || [],
             playerSuitMap,
-            endVotes,
             giveUpVotes
         };
     }
@@ -1402,51 +1397,6 @@ export class BelkaGame {
         }
 
         return summary;
-    }
-
-    public initializeEndVoting(initiatorId: number): void {
-        this.state.endVotes.clear(); // Очищаем предыдущие голоса
-        this.state.endVotes.add(initiatorId);
-    }
-
-    public voteForEnd(playerId: number): {
-        status: 'not_player' | 'already_voted' | 'voted';
-        votesCount?: number;
-        requiredVotes?: number;
-        gameEnded?: boolean;
-    } {
-        // Проверяем, активна ли игра
-        if (!this.state.isActive) {
-            return { status: 'not_player' };
-        }
-
-        // Проверяем, является ли голосующий игроком
-        if (!this.state.players.some(p => p.id === playerId)) {
-            return { status: 'not_player' };
-        }
-
-        // Проверяем, не голосовал ли уже
-        if (this.state.endVotes.has(playerId)) {
-            return { status: 'already_voted' };
-        }
-
-        // Добавляем голос
-        this.state.endVotes.add(playerId);
-
-        const votesCount = this.state.endVotes.size;
-        const requiredVotes = 3; // Требуется 3 голоса из 4 игроков
-        const gameEnded = votesCount >= requiredVotes;
-
-        // Досрочное завершение — только отмена. Результат незаконченной игры
-        // не влияет ни на статистику, ни на ELO.
-        if (gameEnded) this.state.isActive = false;
-
-        return {
-            status: 'voted',
-            votesCount,
-            requiredVotes,
-            gameEnded
-        };
     }
 
     public async giveUp(playerId: number): Promise<{
