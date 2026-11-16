@@ -44,6 +44,8 @@ interface ExtendedGameState {
     startedSuits: CardSuit[]; // Масти, с которых уже заходили первым в текущем раунде
     gameMode: 'belka' | 'walka'; // Режим игры: "белка" до 12 глаз или "Шалқа" до 6 глаз
     matchHistory: {
+        // Match-only MVP counters; absent on legacy saved games (do not award partial MVP).
+        contributions?: Record<string, { opponentPoints: number; supportPoints: number; tricks: number }>;
         highestTrick: { playerId: number; points: number } | null;
         trumpPlays: Record<string, number>;
         cuts: Record<string, number>;
@@ -97,7 +99,7 @@ export class BelkaGame {
             eggsTiebreaker: false,
             startedSuits: [],
             gameMode: 'belka', // По умолчанию режим "белка"
-            matchHistory: { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 }
+            matchHistory: { contributions: {}, highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 }
         };
     }
 
@@ -210,7 +212,7 @@ export class BelkaGame {
         this.state.startedSuits = [];
         this.state.hideClubJackHolder = true;
         this.state.giveUpVotes.clear();
-        this.state.matchHistory = { highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 };
+        this.state.matchHistory = { contributions: {}, highestTrick: null, trumpPlays: {}, cuts: {}, maxDeficitTeam1: 0, maxDeficitTeam2: 0 };
         this.state.playerSuitMap.clear();
         this.state.initialClubJackHolder = null;
         this.state.clubJackHolder = null;
@@ -501,6 +503,25 @@ export class BelkaGame {
 
         // Определяем команду победителя
         const winningTeam = this.state.teams.team1.players.some(p => p.id === winningPlayerId) ? 1 : 2;
+
+        // Credit opponents' cards to the taker and the partner's card to its owner.
+        // The taker's own card is deliberately excluded; no points are counted twice.
+        const contributions = this.state.matchHistory.contributions;
+        if (contributions) {
+            const team = winningTeam === 1 ? this.state.teams.team1 : this.state.teams.team2;
+            const metric = (id: number) => contributions[id] || (contributions[id] = {
+                opponentPoints: 0, supportPoints: 0, tricks: 0
+            });
+            metric(winningPlayerId).tricks += 1;
+            for (const played of this.state.tableCards) {
+                const points = this.getCardPoints(played.card);
+                if (!team.players.some(player => player.id === played.playerId)) {
+                    metric(winningPlayerId).opponentPoints += points;
+                } else if (played.playerId !== winningPlayerId) {
+                    metric(played.playerId).supportPoints += points;
+                }
+            }
+        }
 
         // Начисляем очки команде победителя
         let roundScore = 0;
@@ -1181,6 +1202,21 @@ export class BelkaGame {
         const winner = winningTeam === 1 ? this.state.teams.team1 : this.state.teams.team2;
         const loser = winningTeam === 1 ? this.state.teams.team2 : this.state.teams.team1;
         let summary = translate(this.locale, 'match.summary', { 0: winner.eyes, 1: loser.eyes, 2: isGolden ? translate(this.locale, 'match.goldenSuffix') : '' });
+        const contributions = history.contributions;
+        if (contributions) {
+            const candidates = winner.players.map(player => ({
+                player,
+                ...(contributions[player.id] || { opponentPoints: 0, supportPoints: 0, tricks: 0 })
+            })).map(item => ({ ...item, score: item.opponentPoints + item.supportPoints }))
+                .sort((a, b) => b.score - a.score || b.tricks - a.tricks);
+            const best = candidates[0];
+            if (best && Object.values(contributions).some(item => item.tricks > 0)) {
+                // Exact ties share MVP; seat order must not decide the award.
+                const names = candidates.filter(item => item.score === best.score && item.tricks === best.tricks)
+                    .map(item => `@${item.player.username.replace(/^@/, '')}`).join(', ');
+                summary += translate(this.locale, 'match.mvp', { 0: names, 1: best.score });
+            }
+        }
         if (history.highestTrick) {
             const player = this.state.players.find(item => item.id === history.highestTrick!.playerId);
             summary += translate(this.locale, 'match.highestTrick', { 0: history.highestTrick.points, 1: player?.username || translate(this.locale, 'game.playerFallback') });
@@ -1242,7 +1278,7 @@ export class BelkaGame {
             }
         } catch (error) {
             console.error('Ошибка при обновлении статистики игроков:', error);
-            return '';
+            return this.getMatchHistorySummary(winningTeam, isGolden);
         }
 
         // Показываем звание и изменение ELO.
