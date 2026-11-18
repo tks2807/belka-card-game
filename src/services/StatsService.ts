@@ -20,7 +20,7 @@ export class StatsService {
     // Калибровка только в начале сезона: карточная игра достаточно дисперсна,
     // поэтому после неё рейтинг двигается медленнее.
     private getDynamicKFactor(gamesPlayed: number): number {
-        return gamesPlayed < 10 ? 24 : 18;
+        return gamesPlayed < 10 ? 32 : 24;
     }
 
     // A single ELO-based rank ladder; legacy RP columns remain unused for compatibility.
@@ -124,6 +124,8 @@ export class StatsService {
                 );
                 await client.query('INSERT INTO global_stats (player_id) VALUES ($1) ON CONFLICT (player_id) DO NOTHING', [player.id]);
                 await client.query('INSERT INTO chat_stats (chat_id, player_id) VALUES ($1, $2) ON CONFLICT (chat_id, player_id) DO NOTHING', [chatId, player.id]);
+                // Materialize defaults so even a first-time streak can be row-locked.
+                await client.query('INSERT INTO player_chat_features (chat_id, player_id) VALUES ($1, $2) ON CONFLICT (chat_id, player_id) DO NOTHING', [chatId, player.id]);
             }
 
             const globalRows = await client.query(
@@ -134,6 +136,14 @@ export class StatsService {
                 'SELECT player_id, elo_rating, COALESCE(season_games_played, 0) AS season_games_played FROM chat_stats WHERE chat_id = $1 AND player_id = ANY($2::bigint[]) FOR UPDATE',
                 [chatId, playerIds]
             );
+
+            // The current chat's pre-match streak drives the personal bonus in BOTH
+            // scopes. updatePlayerStats alone advances/resets it after rating updates.
+            const streakRows = await client.query(
+                'SELECT player_id, win_streak FROM player_chat_features WHERE chat_id = $1 AND player_id = ANY($2::bigint[]) FOR UPDATE',
+                [chatId, playerIds]
+            );
+            const streaks = new Map<number, number>(streakRows.rows.map(row => [Number(row.player_id), Number(row.win_streak)]));
 
             const toRatings = (rows: any[]) => new Map(rows.map(row => [
                 Number(row.player_id),
@@ -148,7 +158,7 @@ export class StatsService {
                 const k = this.getDynamicKFactor(gamesBeforeMatch);
                 const expectedWinner = this.calculateExpectedScore(winnerRating, loserRating);
                 const baseWinnerDelta = Math.round(k * (1 - expectedWinner));
-                const winnerDelta = baseWinnerDelta + (isGolden ? 10 : 0);
+                const winnerDelta = baseWinnerDelta + (isGolden ? 15 : 0);
                 return { winnerDelta, loserDelta: -baseWinnerDelta, k };
             };
 
@@ -158,10 +168,11 @@ export class StatsService {
 
             for (const player of players) {
                 const won = winners.some(winner => winner.id === player.id);
+                const streakBonus = won && (streaks.get(player.id) ?? 0) >= 2 ? 3 : 0;
                 const globalOld = global.get(player.id)!;
                 const chatOld = chat.get(player.id)!;
-                const nextGlobal = Math.min(Math.max(globalOld.elo + (won ? globalDelta.winnerDelta : globalDelta.loserDelta), 500), 9999);
-                const nextChat = Math.min(Math.max(chatOld.elo + (won ? chatDelta.winnerDelta : chatDelta.loserDelta), 500), 9999);
+                const nextGlobal = Math.min(Math.max(globalOld.elo + (won ? globalDelta.winnerDelta + streakBonus : globalDelta.loserDelta), 500), 9999);
+                const nextChat = Math.min(Math.max(chatOld.elo + (won ? chatDelta.winnerDelta + streakBonus : chatDelta.loserDelta), 500), 9999);
 
                 await client.query('UPDATE global_stats SET elo_rating = $2 WHERE player_id = $1', [player.id, nextGlobal]);
                 await client.query(
