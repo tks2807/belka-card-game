@@ -153,6 +153,40 @@ test('game: eggs replay, golden win and surrender summaries in both languages', 
     assert.match(result.eloSummary, locale === 'kk' ? /Жеңімпаздар/ : /Победители/);
   }
 }));
+for (const mode of ['belka', 'walka']) {
+  for (const route of ['eyes', 'golden', 'surrender']) {
+    test(`game: ${mode} ${route} completion passes actual mode to team rating`, () => quiet(async () => {
+      const game = fixture('ru');
+      // Restart through the public API with the chosen mode, as for a new match.
+      game.state.isActive = false;
+      game.startGame(mode);
+      const calls = [];
+      const rating = game.statsService.updateTeamRatings;
+      game.statsService.updateTeamRatings = async (...args) => { calls.push(args); return rating(...args); };
+      if (route === 'surrender') {
+        game.state.teams.team1.score = 10;
+        const [first, second] = game.state.teams.team1.players;
+        assert.equal((await game.giveUp(first.id)).status, 'voted');
+        assert.equal(calls.length, 0);
+        assert.equal((await game.giveUp(second.id)).status, 'surrendered');
+      } else {
+        game.state.teams.team1.score = route === 'golden' ? 120 : 90;
+        game.state.teams.team1.tricks = route === 'golden' ? 8 : 6;
+        game.state.teams.team2.score = route === 'golden' ? 0 : 30;
+        game.state.teams.team2.tricks = route === 'golden' ? 0 : 2;
+        game.state.teams.team1.eyes = mode === 'belka' ? 11 : 5;
+        await game.finishRound();
+      }
+      assert.equal(game.state.isActive, false);
+      assert.equal(calls.length, 1);
+      const winner = route === 'surrender' ? game.state.teams.team2 : game.state.teams.team1;
+      const loser = route === 'surrender' ? game.state.teams.team1 : game.state.teams.team2;
+      const identities = team => team.players.map(({ id, username }) => ({ id, username }));
+      assert.deepEqual(calls[0], [identities(winner), identities(loser), route === 'golden', -1, mode]);
+    }));
+  }
+}
+
 test('Telegram handlers: any member switches chat language, menu, commands, titles and pagination', () => quiet(async () => {
   const telegraf = require('telegraf');
   const calls = [];

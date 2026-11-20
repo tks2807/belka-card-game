@@ -59,11 +59,55 @@ function fixture({ globalElo = [1000, 1000, 1000, 1000], chatElo = globalElo,
     };
     active = f;
     f.service = new StatsService();
-    f.match = (golden = false, winners = players.slice(0, 2)) => f.service.updateTeamRatings(winners, players.filter(p => !winners.includes(p)), golden, chatId);
+    f.match = (golden = false, winners = players.slice(0, 2), mode) => f.service.updateTeamRatings(winners, players.filter(p => !winners.includes(p)), golden, chatId, mode);
     f.elos = scope => f.state[scope].map(r => r.elo_rating);
     return f;
 }
 
+
+test('belka doubles base gains and losses for regular and calibration matches; walka/default stay unchanged', async () => {
+    for (const [games, base] of [[10, 12], [9, 16]]) {
+        for (const mode of ['belka', 'walka', undefined]) {
+            const f = fixture({ globalGames: [10, 10, 10, games] });
+            const changes = await f.match(false, players.slice(0, 2), mode);
+            const delta = base * (mode === 'belka' ? 2 : 1);
+            for (const scope of ['global', 'chat']) {
+                assert.deepEqual(f.elos(scope), [1000 + delta, 1000 + delta, 1000 - delta, 1000 - delta], `${mode}, games=${games}, ${scope}`);
+            }
+            assert.deepEqual([...changes.values()].map(c => c.delta), [delta, delta, -delta, -delta]);
+        }
+    }
+});
+
+test('belka multiplies after rounding unequal favorite/upset base Elo, not before rounding', async () => {
+    for (const [elos, delta] of [[[1000, 1200, 900, 1100], 18], [[900, 1100, 1000, 1200], 30]]) {
+        const f = fixture({ globalElo: elos });
+        const changes = await f.match(false, players.slice(0, 2), 'belka');
+        for (const scope of ['global', 'chat']) {
+            assert.deepEqual(f.elos(scope), elos.map((elo, i) => elo + (i < 2 ? delta : -delta)));
+        }
+        assert.deepEqual([...changes.values()].map(c => c.delta), [delta, delta, -delta, -delta]);
+    }
+});
+
+test('belka doubles independent global/chat bases but not golden or personal streak bonuses', async () => {
+    const f = fixture({ globalElo: [1300, 1500, 900, 1100], chatElo: [1000, 1000, 1000, 1000],
+        globalGames: [10, 10, 10, 10], chatGames: [10, 9, 10, 10], streaks: [2, 0, 5, 5] });
+    const before = structuredClone(f.state.features);
+    const changes = await f.match(true, players.slice(0, 2), 'belka');
+    assert.deepEqual(f.elos('global'), [1322, 1519, 896, 1096]);
+    assert.deepEqual(f.elos('chat'), [1050, 1047, 968, 968]);
+    assert.deepEqual(changes.get(1), { oldElo: 1000, newElo: 1050, delta: 50, gamesPlayed: 11 });
+    assert.deepEqual(f.state.features, before);
+});
+
+test('belka clamps doubled base plus additive bonuses in both scopes and returns actual chat deltas', async () => {
+    const f = fixture({ globalElo: [9990, 500, 9999, 500], chatElo: [9998, 501, 9990, 501], streaks: [2, 0, 9, 9] });
+    const changes = await f.match(true, players.slice(0, 2), 'belka');
+    assert.deepEqual(f.elos('global'), [9999, 539, 9975, 500]);
+    assert.deepEqual(f.elos('chat'), [9999, 540, 9966, 500]);
+    assert.deepEqual([...changes.values()].map(c => c.delta), [1, 39, -24, -1]);
+});
 
 // Regression coverage of unchanged pair formula, lifecycle, bounds and transaction contract.
 test('unequal team averages give equal base deltas to teammates (favorite and upset)', async () => {

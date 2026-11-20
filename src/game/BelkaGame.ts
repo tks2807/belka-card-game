@@ -1250,7 +1250,8 @@ export class BelkaGame {
                 winners.map(player => ({ id: player.id, username: player.username })),
                 losers.map(player => ({ id: player.id, username: player.username })),
                 isGolden,
-                this.state.chatId
+                this.state.chatId,
+                this.state.gameMode
             );
 
             // Обновляем статистику для победителей

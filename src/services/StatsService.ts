@@ -105,7 +105,8 @@ export class StatsService {
         winners: Array<{ id: number; username: string }>,
         losers: Array<{ id: number; username: string }>,
         isGolden: boolean,
-        chatId: number
+        chatId: number,
+        mode: 'belka' | 'walka' = 'walka'
     ): Promise<Map<number, { oldElo: number; newElo: number; delta: number; gamesPlayed: number }>> {
         if (winners.length !== 2 || losers.length !== 2) {
             throw new Error('Team ELO requires exactly two players per team');
@@ -157,7 +158,8 @@ export class StatsService {
                 const gamesBeforeMatch = Math.min(...playerIds.map(id => ratings.get(id)!.games));
                 const k = this.getDynamicKFactor(gamesBeforeMatch);
                 const expectedWinner = this.calculateExpectedScore(winnerRating, loserRating);
-                const baseWinnerDelta = Math.round(k * (1 - expectedWinner));
+                // Round first, then multiply only the base; bonuses remain additive.
+                const baseWinnerDelta = Math.round(k * (1 - expectedWinner)) * (mode === 'belka' ? 2 : 1);
                 const winnerDelta = baseWinnerDelta + (isGolden ? 15 : 0);
                 return { winnerDelta, loserDelta: -baseWinnerDelta, k };
             };
